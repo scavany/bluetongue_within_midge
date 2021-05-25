@@ -6,7 +6,7 @@ rm(list = ls())
 
 ## install necessary packages
 if(!require(pacman)){install.packages('pacman'); library(pacman)}
-p_load(deSolve, BayesianTools, data.table, viridis,mc2d)
+p_load(deSolve, BayesianTools, data.table, viridis,mc2d,grDevices)
 
 ## load within-vector model of BTV infection
 source("./general_functions.R")
@@ -135,6 +135,8 @@ dat = data.frame(ode(y = state, times = times,
                      prod.fn.a=prod.wrapper.a,
                      prod.fn.b=prod.wrapper.b,
                      prod.fn.r=prod.wrapper.r))
+save(dat,file="coinfection_reassort_baseline.RData")
+load("coinfection_reassort_baseline.RData")
 
 ## generate plot
 tiff("../figures/model_output_fixed_EIP_coinfection_reassort.tif",res=600,
@@ -169,7 +171,7 @@ legend("topleft",bty="n",legend=c("Strain A","Strain B","Reassortants", "Total")
        lty=c("solid","dashed","solid","solid"),col=c("black","gray","red","green"),
        lwd=c(2,2,2,1))
 plot(dat[,1],dat[,"V.sr"]/rowSums(dat[,grepl("V",names(dat))]),lwd = 2, bty = 'n', 
-     xlab = 'Time (Days)', ylab = 'Proportion reassortant', las = 1,type='l',ylim=c(0,1))
+      xlab = 'Time (Days)', ylab = 'Proportion reassortant', las = 1,type='l',ylim=c(0,1))
 mtext("Time (Days)",side=1,line=3,cex=3/4)
 points(samal$time,samal$prop_reassortant,pch=1)
 points(el.hussein[gap==0]$time, el.hussein[gap==0]$prop_reassortant,pch=2)
@@ -243,8 +245,7 @@ for (second.intro in (1:5)*2-1){
     state.1 <- state
     state.1["V.mb"] <- 0
     dat.1 = data.frame(ode(y = state.1, times = times.1,
-                           func = wv.BTV.coinfection.reassort.varT, parms = parameters,
-                           incubation.period.fn = incubation.period.fn.10,
+                           func = wv.BTV.coinfection.reassort, parms = parameters,
                            prod.fn.a=prod.wrapper.a,
                            prod.fn.b=prod.wrapper.b,
                            prod.fn.r=prod.wrapper.r))
@@ -252,14 +253,13 @@ for (second.intro in (1:5)*2-1){
     names(state.2) <- names(state)
     state.2["V.mb"] <- 1
     dat.2 = data.frame(ode(y = state.2, times = times.2,
-                           func = wv.BTV.coinfection.reassort.varT, parms = parameters,
-                           incubation.period.fn = incubation.period.fn.10,
+                           func = wv.BTV.coinfection.reassort, parms = parameters,
                            prod.fn.a=prod.wrapper.a,
                            prod.fn.b=prod.wrapper.b,
                            prod.fn.r=prod.wrapper.r))
     dat <- rbind(dat.1,dat.2)
-    tiff(paste0("../figures/model_output_coinfection_reassort_varT_sep",second.intro,
-                "_",withlike,"wl.tif"),
+    tiff(paste0("../figures/model_output_fixed_EIP_coinfection_reassort_sep",second.intro,
+                "_fitted.tif"),
          res=600,compression="lzw",height=600*7,width=600*7)
     par(mar=c(2.1,4.1,1.1,2.1),
         oma=c(3,0,3,0))
@@ -282,3 +282,101 @@ for (second.intro in (1:5)*2-1){
            pch=c(2),col=c("black"))
     dev.off()
 }
+
+### Explore parameter space
+growth.ratios <- 10^seq(0,10)
+withlikes <- seq(0,1,0.1)
+param.grid <- expand.grid(growth.ratios,withlikes)
+output.grid <- vector(mode="numeric",length=nrow(param.grid))
+
+for (iii in 1:nrow(param.grid)) {
+    print(iii)
+    growth.ratio.temp <- param.grid[iii,1]
+    withlike.temp <- param.grid[iii,2]
+    prod.wrapper.a <- function(i,j,n,r = growth.ratio.temp, wl = withlike.temp){
+        production.fn.a(i,j,n,r,wl)
+    }
+    prod.wrapper.b <- function(i,j,n,r = growth.ratio.temp, wl = withlike.temp){
+        production.fn.b(i,j,n,r,wl)
+    }
+    prod.wrapper.r <- function(i,j,n,r = growth.ratio.temp, wl = withlike.temp){
+        production.fn.r(i,j,n,r,wl)
+    }
+    dat = data.frame(ode(y = state, times = times,
+                         func = wv.BTV.coinfection.reassort, parms = parameters,
+                         prod.fn.a=prod.wrapper.a,
+                         prod.fn.b=prod.wrapper.b,
+                         prod.fn.r=prod.wrapper.r))
+    output.grid[iii] <- dat[nrow(dat),"V.sr"]/sum(dat[nrow(dat),grepl("V",names(dat))])
+}
+
+## save(output.grid, file="../output/output_grid.RData")
+load("../output/output_grid.RData")
+
+## Contour plot
+xtick <- pretty(growth.ratios)
+x <- log(growth.ratios,base=10)
+ytick <- pretty(withlikes)
+tiff(paste0("../figures/contour_plot_growth_ratio_withlike.tif"),
+     res=600,compression="lzw",height=600*7,width=600*7)
+filled.contour(x, withlikes,
+               matrix(output.grid,nrow=length(growth.ratios)),
+               color.palette=magma,
+               plot.axes = {axis(1,at=pretty(x),label=10^pretty(x));axis(2)},
+               xlab="Growth ratio",
+               ylab="With-like proportion")
+points(log(growth.ratio,base=10), withlike,col="red",pch=19)
+text(1.1*log(growth.ratio,base=10), withlike,"Best-fitting\nparameter combination",adj=0,col="red")
+dev.off()
+
+
+### barriers - basic
+barrier.prob <- 0.34
+infection.prob <- barrier.prob*(2 - barrier.prob)
+n.plaques <- 20
+load("coinfection_reassort_baseline.RData")
+reassort.prop <- dat[,"V.sr"]/rowSums(dat[,grepl("V",names(dat))])
+
+## get quantiles
+if (barrier.prob^2/infection.prob > 0.975) {
+    reassort.upper <- qbinom((0.975 + barrier.prob^2/infection.prob - 1)/(barrier.prob^2/infection.prob),
+                             n.plaques,reassort.prop)/n.plaques
+    reassort.lower <- qbinom((0.025 + barrier.prob^2/infection.prob - 1)/(barrier.prob^2/infection.prob),
+                             n.plaques,reassort.prop)/n.plaques
+} else if (barrier.prob^2/infection.prob > 0.025) {
+    reassort.upper <- qbinom((0.975 + barrier.prob^2/infection.prob - 1)/(barrier.prob^2/infection.prob),
+                             n.plaques,reassort.prop)/n.plaques
+    reassort.lower <- rep(0,nrow(dat))
+} else {
+    reassort.upper <- rep(0,nrow(dat))
+    reassort.lower <- rep(0,nrow(dat))
+}
+
+## generate plot
+tiff("../figures/model_output_fixed_EIP_coinfection_reassort_barrier_basic.tif",res=600,
+     compression="lzw",height=600*7,width=600*7)
+par(mar=c(2.1,4.1,1.1,2.1),
+    oma=c(3,0,3,0))
+## layout(mat = matrix(c(1,1,2,2), nrow = 2,byrow=TRUE))
+## plot(dat[,1],0.5*initial.titre*(dat[,"V.ma"] + dat[,"V.sa"]),lwd = 2, bty = 'n', 
+##      xlab = '', ylab = 'Viral load', las = 1,log="y",type='l',
+##      ylim = range(c(10^mellor$titre, 0.5*initial.titre*(dat[,"V.ma"] + dat[,"V.sa"]))))
+## lines(dat[,1],0.5*initial.titre*(dat[,"V.mb"] + dat[,"V.sb"]),col="gray",lty="dashed",lwd=2)
+## lines(dat[,1],0.5*initial.titre*(dat[,"V.sr"]),col="red",lwd=2)
+## lines(dat[,1],0.5*initial.titre*(rowSums(dat[,grepl("V",names(dat))])),col="green",lwd=1)
+## points(mellor$day,10^mellor$titre)
+## legend("topleft",bty="n",legend=c("Strain A","Strain B","Reassortants", "Total"),
+##        lty=c("solid","dashed","solid","solid"),col=c("black","gray","red","green"),
+##        lwd=c(2,2,2,1))
+plot(dat[,1],barrier.prob^2 * reassort.prop/infection.prob,
+     lwd = 2, bty = 'n', xaxs="i",yaxs="i",
+     xlab = 'Time (Days)', ylab = 'Proportion reassortant', las = 1,type='l',ylim=c(0,1))
+polygon(c(dat[,1],rev(dat[,1])),
+        c(reassort.upper,rev(reassort.lower)),
+        col=adjustcolor("red",alpha.f=0.25),border=FALSE)
+mtext("Time (Days)",side=1,line=3,cex=3/4)
+points(samal$time,samal$prop_reassortant,pch=1)
+points(el.hussein[gap==0]$time, el.hussein[gap==0]$prop_reassortant,pch=2)
+legend("topleft",bty="n",legend=c("Samal, 1987","el Hussein, 1989"),
+       pch=c(1,2))
+dev.off()
