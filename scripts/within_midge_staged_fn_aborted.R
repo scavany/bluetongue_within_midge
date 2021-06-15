@@ -2,7 +2,7 @@
 wv.BTV = function(t, state, parameters)
 {
   with(as.list(c(state, parameters)),{
-    dV.m = -c.m * V.m
+    dV.m = p.m * (1 - prop.s) * I.mn - c.m * V.m
     dT.m = -beta.m * T.m * V.m
     dI.m0 = beta.m * T.m * V.m - n * I.m0 / epsilon
     dI.m <- vector(mode="numeric",length=n-1)
@@ -13,38 +13,21 @@ wv.BTV = function(t, state, parameters)
         }
     }
     dI.mn = n * get(paste0("I.m",n-1)) / epsilon
-    dV.h = p.m * I.mn + k * p.s * I.s - c.s * V.h 
+    dV.h = p.m * prop.s * I.mn + p.s * I.s - c.s * V.h 
     dT.s = -beta.s * T.s * V.h
-    dI.s0 = beta.s * T.s * V.h - I.s0 / epsilon
-    dI.s <- I.s0 / epsilon
+    dI.s <- beta.s * T.s * V.h
     list(c(dV.m, dT.m, dI.m0, dI.m, dI.mn,
-           dV.h, dT.s, dI.s0,dI.s))
+           dV.h, dT.s, dI.s))
   })
 }
 
-wv.BTV.test = function(t, state, parameters)
-{
-  with(as.list(c(state, parameters)),{
-    dV.m = k * p.m * I.m - c.m * V.m
-    dT.m = mu.m * I.m - b.m * T.m * I.m - beta.m * T.m * V.m
-    dI.m = b.m * T.m * I.m + beta.m * T.m * V.m - mu.m * I.m
-    dV.h = (1 - k) * p.m * I.m + p.s * I.s - c.s * V.h 
-    dT.s = (1 - k) * p.m * I.m * tau + mu.s * I.s - b.s * T.s * I.s - beta.s * T.s * V.h
-    dI.s = b.s * T.s * I.s + beta.s * T.s * V.h - mu.s * I.s
-    dN.s = (1 - k) * p.m * I.m * tau
-    list(c(dV.m, dT.m, dI.m,
-           dV.h, dT.s, dI.s,
-           dN.s))
-  })
-}
- 
 ## within midge model intrathoracic (no eclipse)
 wv.BTV.intrathoracic = function(t, state, parameters)
 {
   with(as.list(c(state, parameters)),{
     dV.h = p.s * I.s - c.s * V.h # all infected cells produce virus
-    dT.s = -beta.s * T.s * V.h
-    dI.s = beta.s * T.s * V.h
+    dT.s = -beta.s * T.s * V.h + mu.s * I.s
+    dI.s = beta.s * T.s * V.h - mu.s * I.s
     list(c(dV.h, dT.s, dI.s))
   })
 }
@@ -105,44 +88,37 @@ wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=productio
         sumV.mr.vec <- vector(mode="numeric",length=n-1)
         ## Secondary tissue cells
         dT.s = -beta.s * T.s * (V.sa + V.sb + V.sr)
-        dI.sa0 = beta.s * T.s * V.sa - I.sa0 * (1 / epsilon + beta.s * (V.sb + V.sr))
-        dI.sb0 = beta.s * T.s * V.sb - I.sb0 * (1 / epsilon + beta.s * (V.sa + V.sr))
-        dI.sr0 = beta.s * T.s * V.sr - I.sr0 * (1 / epsilon + beta.s * (V.sa + V.sb))
-        dI.san = I.sa0 / epsilon
-        dI.sbn = I.sb0 / epsilon
-        dI.srn = I.sr0 / epsilon
-        dI.sab00 <- beta.s * (V.sa * I.sb0 + V.sb * I.sa0) - I.sab00/epsilon
-        dI.sar00 <- beta.s * (V.sa * I.sr0 + V.sr * I.sa0) - I.sar00/epsilon
-        dI.sbr00 <- beta.s * (V.sr * I.sb0 + V.sb * I.sr0) - I.sbr00/epsilon
-        dI.sabnn <- I.sab00/epsilon
-        dI.sarnn <- I.sar00/epsilon
-        dI.sbrnn <- I.sbr00/epsilon
-        if (n>1) {
-            for (ii in 1:(n-1)) {
-                ## Midgut cells
-                diffval.a <- get(paste0("I.ma",ii-1)) - get(paste0("I.ma",ii))
-                diffval.b <- get(paste0("I.mb",ii-1)) - get(paste0("I.mb",ii))
-                dI.ma[ii] <- n * diffval.a / epsilon - beta.m * V.mb * get(paste0("I.ma",ii))
-                dI.mb[ii] <- n * diffval.b / epsilon - beta.m * V.ma * get(paste0("I.mb",ii))
-                dI.mabj0[ii] <- beta.m * V.mb * get(paste0("I.ma",ii)) - n * get(paste0("I.mab",ii,"0")) / epsilon
-                dI.mab0k[ii] <- beta.m * V.ma * get(paste0("I.mb",ii)) - n * get(paste0("I.mab0",ii)) / epsilon
-                dI.mabjn[ii] <- n * get(paste0("I.mab",ii-1,n-1)) / epsilon
-                dI.mabnk[ii] <- n * get(paste0("I.mab",n-1,ii-1)) / epsilon
-                ## Secondary tissue virus
-                sumV.ma.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.a(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.a(n,ii,n)
-                sumV.mb.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.b(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.b(n,ii,n)
-                sumV.mr.vec[ii] <- (get(paste0("I.mab",ii,"n")) + get(paste0("I.mabn",ii))) * prod.fn.r(ii,n,n)
-            }
+        dI.sa0 = beta.s * T.s * V.sa - I.sa0 * (1 / tau + beta.s * (V.sb + V.sr))
+        dI.sb0 = beta.s * T.s * V.sb - I.sb0 * (1 / tau + beta.s * (V.sa + V.sr))
+        dI.sr0 = beta.s * T.s * V.sr - I.sr0 * (1 / tau + beta.s * (V.sa + V.sb))
+        dI.san = I.sa0 / tau
+        dI.sbn = I.sb0 / tau
+        dI.srn = I.sr0 / tau
+        dI.sab00 <- beta.s * (V.sa * I.sb0 + V.sb * I.sa0)
+        dI.sar00 <- beta.s * (V.sa * I.sr0 + V.sr * I.sa0)
+        dI.sbr00 <- beta.s * (V.sr * I.sb0 + V.sb * I.sr0)
+        for (ii in 1:(n-1)) {
+            ## Midgut cells
+            diffval.a <- get(paste0("I.ma",ii-1)) - get(paste0("I.ma",ii))
+            diffval.b <- get(paste0("I.mb",ii-1)) - get(paste0("I.mb",ii))
+            dI.ma[ii] <- n * diffval.a / epsilon - beta.m * V.mb * get(paste0("I.ma",ii))
+            dI.mb[ii] <- n * diffval.b / epsilon - beta.m * V.ma * get(paste0("I.mb",ii))
+            dI.mabj0[ii] <- beta.m * V.mb * get(paste0("I.ma",ii)) - n * get(paste0("I.mab",ii,"0")) / epsilon
+            dI.mab0k[ii] <- beta.m * V.ma * get(paste0("I.mb",ii)) - n * get(paste0("I.mab0",ii)) / epsilon
+            dI.mabjn[ii] <- n * get(paste0("I.mab",ii-1,n-1)) / epsilon
+            dI.mabnk[ii] <- n * get(paste0("I.mab",n-1,ii-1)) / epsilon
+            ## Secondary tissue virus
+            sumV.ma.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.a(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.a(n,ii,n)
+            sumV.mb.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.b(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.b(n,ii,n)
+            sumV.mr.vec[ii] <- (get(paste0("I.mab",ii,"n")) + get(paste0("I.mabn",ii))) * prod.fn.r(ii,n,n)
         }
         ## Midgut cells
         dI.mabjk = array(dim = c(n-1,n-1))
-        if (n>1){
-            for (jj in 1:(n-1)) {
-                for (kk in 1:(n-1)) {
-                    ## Midgut cells
-                    diffval <- get(paste0("I.mab",jj-1,kk-1)) - get(paste0("I.mab",jj,kk))
-                    dI.mabjk[jj,kk] <- n * diffval / epsilon
-                }
+        for (jj in 1:(n-1)) {
+            for (kk in 1:(n-1)) {
+                ## Midgut cells
+                diffval <- get(paste0("I.mab",jj-1,kk-1)) - get(paste0("I.mab",jj,kk))
+                dI.mabjk[jj,kk] <- n * diffval / epsilon
             }
         }
         ## Midgut cells
@@ -152,20 +128,11 @@ wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=productio
         sumV.ma <- sum(sumV.ma.vec)
         sumV.mb <- sum(sumV.mb.vec)
         sumV.mr <- sum(sumV.mr.vec)
-        ## Next three lines need editting to account for n=1
-        if (n>1) {
-            dV.sa = p.m * (I.man + sumV.ma + I.mabnn * prod.fn.a(n,n,n)) + k * p.s * (I.san + (I.sabnn + I.sarnn) * prod.fn.a(1,1,1)) - c.s * V.sa
-            dV.sb = p.m * (I.mbn + sumV.mb + I.mabnn * prod.fn.b(n,n,n)) + k * p.s * (I.sbn + I.sabnn * prod.fn.b(1,1,1) + I.sbrnn * prod.fn.a(1,1,1)) - c.s * V.sb
-            dV.sr = p.m * (sumV.mr + I.mabnn * prod.fn.r(n,n,n)) +
-                k * p.s * ((I.sabnn + I.sarnn + I.sbrnn) * prod.fn.r(1,1,1) + I.srn +
-                          (I.sarnn + I.sbrnn) * prod.fn.b(1,1,1))  - c.s * V.sr
-        } else {
-            dV.sa = p.m * (I.man + I.mabnn * prod.fn.a(n,n,n)) + k * p.s * (I.san + (I.sabnn + I.sarnn) * prod.fn.a(1,1,1)) - c.s * V.sa
-            dV.sb = p.m * (I.mbn + I.mabnn * prod.fn.b(n,n,n)) + k * p.s * (I.sbn + I.sabnn * prod.fn.b(1,1,1) + I.sbrnn * prod.fn.a(1,1,1)) - c.s * V.sb
-            dV.sr = p.m * I.mabnn * prod.fn.r(n,n,n) +
-                k * p.s * ((I.sabnn + I.sarnn + I.sbrnn) * prod.fn.r(1,1,1) + I.srn +
-                          (I.sarnn + I.sbrnn) * prod.fn.b(1,1,1))  - c.s * V.sr
-        }
+        dV.sa = p.m * (I.man + sumV.ma + I.mabnn * prod.fn.a(n,n,n)) + k * p.s * (I.san + I.sa0 + (I.sab00 + I.sar00) * prod.fn.a(1,1,1)) - c.s * V.sa
+        dV.sb = p.m * (I.mbn + sumV.mb + I.mabnn * prod.fn.b(n,n,n)) + k * p.s * (I.sbn + I.sb0 + I.sab00 * prod.fn.b(1,1,1) + I.sbr00 * prod.fn.a(1,1,1)) - c.s * V.sb
+        dV.sr = p.m * (sumV.mr + I.mabnn * prod.fn.r(n,n,n)) +
+            k* p.s * ((I.sab00 + I.sar00 + I.sbr00) * prod.fn.r(1,1,1) + I.srn + I.sr0 +
+                      (I.sar00 + I.sbr00) * prod.fn.b(1,1,1))  - c.s * V.sr
         list(c(dV.ma, dV.mb,
                dT.m,
                dI.ma0, dI.ma, dI.man,
@@ -180,10 +147,7 @@ wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=productio
                dI.sr0, dI.srn,
                dI.sab00,
                dI.sar00,
-               dI.sbr00,
-               dI.sabnn,
-               dI.sarnn,
-               dI.sbrnn))
+               dI.sbr00))
     })
 }
 

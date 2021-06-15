@@ -1,4 +1,7 @@
 figures/
 output/
 docs/
-.RData
+*.RData
+*~
+#*#
+old_scripts/
