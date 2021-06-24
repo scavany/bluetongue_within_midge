@@ -68,11 +68,12 @@ NLL <- function(pars) {
         titre.model.it <- dat[data.hours.it,"V.h"]
         ## Then full infection, accounting for both succesful and failed infections
         beta.m <- as.numeric(exp(lbeta.m))
-        p.m <- p.s/1e4#as.numeric(exp(lp.m))
+        p.m <- as.numeric(exp(lp.m))
         c.m <- as.numeric(exp(lc.m))
         epsilon <- as.numeric(exp(lepsilon))
-        k <- geometric.mean(tail(10^fu$log10.mean.titre))/geometric.mean(tail(fu.intrathoracic$titre)) -
-            p.m*(1-exp(-beta.m*initial.titre))/p.s
+        k <- (p.m*(1-exp(-beta.m*initial.titre/c.m)) + p.s) / c.s / geometric.mean(tail(10^fu$log10.mean.titre))
+            ## geometric.mean(tail(10^fu$log10.mean.titre))/geometric.mean(tail(fu.intrathoracic$titre)) -
+            ## p.m*(1-exp(-beta.m*initial.titre))/p.s
         ## print(k)
         if (k<0) {return(Inf)}
         parameters = c(c.m = c.m, c.s = c.s, beta.m = beta.m, beta.s = beta.s, n = n,
@@ -105,10 +106,10 @@ optim.out <- optim(pars.init,NLL)
 save(optim.out,file="optim_out.RData")
 load("optim_out.RData")
 
-lower <- c(lbeta.m=1e-7,lp.m=1e-3,lc.m=1e-4,lepsilon=1)#,
-           ##lbeta.s=1e-7,lp.s=1e-3)
-upper <- c(lbeta.m=1e-1,lp.m=1e3,lc.m=1e0,lepsilon=3)#,
-           ##lbeta.s=1e-1,lp.s=1e3)
+lower <- c(lbeta.m=1e-7,lp.m=1e-3,lc.m=1e-4,lepsilon=1,
+           lbeta.s=1e-7,lp.s=1e-3)
+upper <- c(lbeta.m=1e-1,lp.m=1e3,lc.m=1e0,lepsilon=3,
+           lbeta.s=1e-1,lp.s=1e3)
 bayesianSetup = createBayesianSetup(LL,lower=lower,upper=upper)
 mcmc.out = runMCMC(bayesianSetup)#,
                    ##settings=list(iterations=9e5))
@@ -150,8 +151,9 @@ epsilon <- as.numeric(exp(optim.out$par["lepsilon"]))
 beta.m <- as.numeric(exp(optim.out$par["lbeta.m"]))
 p.m <- as.numeric(exp(optim.out$par["lp.m"]))
 c.m <- as.numeric(exp(optim.out$par["lc.m"]))
-k <- geometric.mean(tail(10^fu$log10.mean.titre))/geometric.mean(tail(fu.intrathoracic$titre)) -
-    p.m*(1-exp(-beta.m*initial.titre))/p.s
+k <- (p.m*(1-exp(-beta.m*initial.titre/c.m)) + p.s) / c.s / geometric.mean(tail(10^fu$log10.mean.titre))
+## k <- geometric.mean(tail(10^fu$log10.mean.titre))/geometric.mean(tail(fu.intrathoracic$titre)) -
+##    p.m*(1-exp(-beta.m*initial.titre))/p.s
 inoculum.factor <- 1
 parameters = c(c.m = c.m, c.s = c.s, beta.m = beta.m, beta.s = beta.s, n = n,
                p.m = p.m, p.s = p.s, epsilon = epsilon, k=as.numeric(k))

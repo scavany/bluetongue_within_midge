@@ -13,7 +13,7 @@ wv.BTV = function(t, state, parameters)
         }
     }
     dI.mn = n * get(paste0("I.m",n-1)) / epsilon
-    dV.h = p.m * I.mn + k * p.s * I.s - c.s * V.h 
+    dV.h = p.m * I.mn + p.s * I.s - k * c.s * V.h 
     dT.s = -beta.s * T.s * V.h
     dI.s0 = beta.s * T.s * V.h - I.s0 / epsilon
     dI.s <- I.s0 / epsilon
