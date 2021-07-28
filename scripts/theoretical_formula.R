@@ -5,7 +5,8 @@
 ##    https://onlinelibrary.wiley.com/doi/epdf/10.1046/j.1365-2915.2002.00357.x (Table 3)
 ## Alternative incubation period estimates:
 ##    https://onlinelibrary.wiley.com/doi/epdf/10.1046/j.1365-2915.2002.00357.x (Fig. 2)
-##    https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1365-2915.1995.tb00119.x 
+##    https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1365-2915.1995.tb00119.x
+##    https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0027987
 ## Biting rates: https://pubmed.ncbi.nlm.nih.gov/19496435/
 ##    Or try formula in https://onlinelibrary.wiley.com/doi/full/10.1046/j.1365-2915.2002.00357.x
 ##    which comes from Mullens & Holbrook
