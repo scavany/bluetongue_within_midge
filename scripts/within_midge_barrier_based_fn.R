@@ -11,55 +11,133 @@ wv.BTV.barrier = function(t,
 }
 
 ## deterministic model
-wv.BTV.barrier.det = function(t, state, parameters) {
-    wv.BTV.odes <- function(t, state, parameters)
+wv.BTV.barrier.det = function(t, state, parameters)
+{
+    wv.BTV.odes <- function(t,state,parameters) {
         with(as.list(c(state, parameters)),{
-            dV.m = -c.m * V.m - beta.m * V.m * T.m
-            dT.m = -beta.m * V.m * T.m 
-            dE.m = beta.m * V.m * T.m - E.m / epsilon.m
-            dI.m = E.m / epsilon.m
-            dV.s = p.m * I.m + p.s * I.s - c.s * V.s - beta.s * T.s * V.s
-            dT.s = -beta.s * T.s * V.s 
-            dE.s = beta.s * T.s * V.s - E.s / epsilon.s
-            dI.s = E.s / epsilon.s
-            list(c(dV.m, dT.m, dE.m, dI.m, 
-                   dV.s, dT.s, dE.s, dI.s))
-        })
+            dV.b = -c.b * V.b
 
+            dV.m = -(beta.b * V.b + beta.m * V.m) * T.m + d.l * p.l * I.l +
+                (1 - d.m) * p.m * I.m - c.m * V.m
+            dT.m = -(beta.b * V.b + beta.m * V.m) * T.m + mu.m * (T0.m - T.m) 
+            dE.m = (beta.b * V.b + beta.m * V.m) * T.m - mu.m * E.m - E.m / epsilon.m
+            dI.m = E.m / epsilon.m - mui.m * I.m
+
+            dV.l = -beta.l * T.l * V.l + d.m * p.m * I.m + d.d * p.d * I.d +
+                (1 - 2 * d.l) * p.l * I.l - c.l * V.l
+            dT.l = -beta.l * T.l * V.l + mu.l * (T0.l - T.l) 
+            dE.l = beta.l * T.l * V.l  - E.l / epsilon.l - mu.l * E.l
+            dI.l = E.l / epsilon.l - mui.l * I.l
+
+            dV.d = -beta.d * T.d * V.d + d.l * p.l * I.l + d.s * p.s * I.s +
+                (1 - 2 * d.d) * p.d * I.d - c.d * V.d
+            dT.d = -beta.d * T.d * V.d + mu.d * (T0.d - T.d) 
+            dE.d = beta.d * T.d * V.d - E.d / epsilon.d - mu.d * E.d
+            dI.d = E.d / epsilon.d - mui.d * I.d
+
+            dV.s = beta.s * T.s * V.s + d.d * p.d * I.d + p.s * (1 - d.s) * I.s - c.s * V.s
+            dT.s = -beta.s * T.s * V.s + mu.s * (T0.s - T.s) 
+            dE.s = beta.s * T.s * V.s - E.s / epsilon.s - mu.s * E.s
+            dI.s = E.s / epsilon.s - mui.s * I.s
+            list(c(dV.b,
+                   dV.m, 0, dT.m, dE.m, dI.m,
+                   dV.l, 0, dT.l, dE.l, dI.l,
+                   dV.d, 0, dT.d, dE.d, dI.d,
+                   dV.s, 0, dT.s, dE.s, dI.s))
+        })
+    }
     out <- as.data.frame(ode(state,t,wv.BTV.odes,parameters))
     return(out)
 }
 
-## stochastic model
-wv.BTV.barrier.stoch <- function(t, state, parameters){
+## stochastic model - needs a slight revamp
+wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
+
+    ## Calculate available target cells
+    state[["T.m"]] <- rbinom(1, state[["N.m"]],
+                             1-(1-barrier.probs[["p.mib"]])^(1/state[["N.m"]]))
+    state[["T.l"]] <- ifelse(runif(1) < barrier.probs[["p.meb"]],state[["N.l"]],0)
+    parms[["d.d"]] <- ifelse(runif(1) < barrier.probs[["p.db"]],parms[["d.d"]],0)
+    state[["T.s"]] <- rbinom(1, state[["N.s"]],
+                             1-(1-barrier.probs[["p.sgib"]])^(1/state[["N.s"]]))
 
     ## Transitions matrix
     wv.BTV.transitions <- list(
-        c(V.m=-1),
-        c(T.m=-1, V.m=-1, E.m=1),
+        c(V.b=-1), 
+        c(T.m=-1,E.m=1,V.b=-1),
+        c(V.m=1), 
+        c(V.m=-1), 
+        c(T.m=-1,E.m=1,V.m=-1),
         c(E.m=-1,I.m=1),
-        c(V.s=1),
-        c(V.s=-1),
-        c(T.s=-1, V.s=-1, E.s=1),
-        c(E.s=-1,I.s=1)
+        c(T.m=1),
+        c(E.m=-1),
+        c(I.m=-1),
+        c(V.l=1), 
+        c(V.l=-1), 
+        c(T.l=-1,E.l=1,V.l=-1),
+        c(E.l=-1,I.l=1),
+        c(T.l=1),
+        c(E.l=-1),
+        c(I.l=-1),
+        c(V.d=1), 
+        c(V.d=-1), 
+        c(T.d=-1,E.d=1,V.d=-1),
+        c(E.d=-1,I.d=1),
+        c(T.d=1),
+        c(E.d=-1),
+        c(I.d=-1),
+        c(V.s=1), 
+        c(V.s=-1), 
+        c(T.s=-1,E.s=1,V.s=-1),
+        c(E.s=-1,I.s=1),
+        c(T.s=1),
+        c(E.s=-1),
+        c(I.s=-1)
     )
-
+    #vir prod, vir death, infection, progression, new cells, E death, I death
     wv.BTV.rates <- function(state, parameters, t)
     {
         with(as.list(c(state, parameters)),{
-            return(c(c.m * V.m,
+            return(c(c.b * V.b,
+                     beta.b * V.b * T.m,
+                     
+                     (1 - d.m) * p.m * I.m + d.l * p.l * I.l,
+                     c.m * V.m,
                      beta.m * V.m * T.m,
-                     E.m / epsilon.m,
-                     p.m * I.m + p.s * I.s,
+                     E.m/epsilon.m,
+                     (T0.m - T.m) * mu.m,
+                     E.m * mu.m,
+                     I.m * mui.m,
+
+                     d.m * p.m * I.m + d.d * p.d * I.d + (1 - 2 * d.l) * p.l * I.l,
+                     c.l * V.l,
+                     beta.l * T.l * V.l,
+                     E.l/epsilon.l,
+                     (T0.l - T.l) * mu.l,
+                     E.l * mu.l,
+                     I.l * mui.l,
+
+                     d.l * p.l * I.l + d.s * p.s * I.s + (1 - 2 * d.d) * p.d * I.d,
+                     c.d * V.d,
+                     beta.d * T.d * V.d,
+                     E.d/epsilon.d,
+                     (T0.d - T.d) * mu.d,
+                     E.d * mu.d,
+                     I.d * mui.d,
+
+                     d.d * p.d * I.d + p.s * (1 - d.s) * I.s,
                      c.s * V.s,
                      beta.s * T.s * V.s,
-                     E.s/epsilon.s
+                     E.s/epsilon.s,
+                     (T0.s - T.s) * mu.s,
+                     E.s * mu.s,
+                     I.s * mui.s
                      ))
         })
     }
-
+    
     out.temp <- as.data.frame(ssa.adaptivetau(state, wv.BTV.transitions, wv.BTV.rates,
-                                         parameters, tf=diff(range(t))))
+                                              parameters, tf=diff(range(t))))
     out.temp$time <- out.temp$time + min(t)
     out <- cbind(time = t, apply(out.temp[, -1], 2, function(col) {
         approx(x = out.temp[, 1], y = col, xout = t, method = "constant")$y

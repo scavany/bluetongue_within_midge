@@ -2,10 +2,9 @@ library(pacman)
 p_load(deSolve, BayesianTools)
 
 ## within midge model
-wv.BTV.koelle.it = function(t, state, parameters)
-{
+wv.BTV.koelle.it = function(t, state, parameters) {
     with(as.list(c(pmax(state,0), parameters)),{
-        dV.s = lambda.s * H.s * (1 - dnbinom(0,k,mu=max(P.s,0)/H.s)) - (eta.s + beta.s) * H.s * V.s
+        dV.s = lambda.s * H.s * (1 - dnbinom(0,k,mu=max(P.s,0)/H.s)) - (eta.s + beta.s * H.s) * V.s
         dP.s = beta.s * H.s * V.s - b.s * P.s
         list(c(dV.s, dP.s))
     })

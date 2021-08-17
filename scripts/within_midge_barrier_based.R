@@ -8,10 +8,10 @@ rm(list = ls())
 if(!require(pacman)){install.packages('pacman'); library(pacman)}
 p_load(data.table,
        viridis,
+       fitR,
        deSolve,
        grDevices,
-       BayesianTools,
-       adaptivetau#,psych,bbmle
+       BayesianTools#,psych,bbmle
        )
 
 ## load within-vector model of BTV infection
@@ -35,10 +35,7 @@ data.hours <- which(times %in% fu$Time.pi..hours.)
 model.hours <- which(fu$Time.pi..hours. %in% times)
 titre.data <- floor(10^fu$log10.mean.titre[model.hours] + 0.5)
 
-## Barrier probabilities
-p.mib=1/3;p.meb=1/2;p.db=1/5
-
-## Prevalence over time
+## Fit logistic curve to the proportion positive
 prop.positive.fn <- function(times,prop.disseminated,k,t0) {
     1 - (1 - prop.disseminated)/(1 + exp(-k*(times - t0)))
 }
@@ -48,28 +45,41 @@ logistic.optim.fn <- function(par) {
 }
 logistic.optim.out <- optim(c(0.4,1,0),logistic.optim.fn)
 logistic.optim.out
-plot(times,prop.positive.fn(times,logistic.optim.out$par[1],
-                            logistic.optim.out$par[2],
-                            logistic.optim.out$par[3]),type='l',
-     ylim=c(0,1),ylab="Proportion positive")
-points(fu$Time.pi..hours.,fu$Detection.rate)
+## plot(times,prop.positive.fn(times,logistic.optim.out$par[1],
+##                             logistic.optim.out$par[2],
+##                             logistic.optim.out$par[3]),type='l',
+##      ylim=c(0,1),ylab="Proportion positive")
+## points(fu$Time.pi..hours.,fu$Detection.rate)
 prop.positive.vec <- prop.positive.fn(times,logistic.optim.out$par[1],
                                       logistic.optim.out$par[2],
                                       logistic.optim.out$par[3])
 prop.disseminated <- min(prop.positive.vec)
-t.null <- logistic.optim.out$par[3]
 
-## Calculate midgut clearance based on t.null
-V.0 <- floor(initial.titre * log(2) + 0.5)
-V.null <- 10^0.75 * log(2)
-c.m <- log(V.0/V.null) / t.null
+## Barrier probabilities
+p.mib=1/3;p.meb=1/2;p.db=1/5
+p.sgib=1;p.sgeb=1;p.totb=0
+barrier.probs <- c(p.mib=p.mib,p.meb=p.meb,p.db=p.db,
+                   p.sgib=p.sgib,p.sgeb=p.sgeb,p.totb=p.totb)
 
 ## Oral infection - parms and initial conditions
-## The equilibrium is p.s * T.s0 / c.s. This should be set such that
-## 80% of the time the equilibrium is below V.null, and
-## 20% of the time it is the equilibrium given in the data
-## These initial parms are for the 20% - for fitting reasons
-V.inf <- mean(log(2) * tail(10^fu$log10.mean.titre))
+c.m <- 0.2; c.l <- 20; c.s <- 0.05; epsilon <- 2*24
+beta <- 1e-5; mu = 1/(3*24); T0 <- 1000
+d <- 0.5; p.m <- 10; p.s <- 100
+parms <- c(c.b=c.m, beta.b=beta,
+           c.m=c.m, epsilon.m=epsilon, d.m = d, p.m=p.m, beta.m=beta, T0.m=T0, mu.m=mu, mui.m=mu,
+           c.l=c.l, epsilon.l=epsilon, d.l = d, p.l=p.m, beta.l=beta, T0.l=T0, mu.l=mu, mui.l=mu,
+           c.d=c.s, epsilon.d=epsilon, d.d = d, p.d=p.s, beta.d=beta, T0.d=T0, mu.d=mu, mui.d=mu,
+           c.s=c.s, epsilon.s=epsilon, d.s = d, p.s=p.s, beta.s=beta, T0.s=T0, mu.s=mu, mui.s=mu)
+pars.init <- c(lc.m=log(c.m),lc.l=log(c.l),lc.s=log(c.s),lbeta=log(beta),logitd=qlogis(d),
+               lp.m=log(p.m),lp.s=log(p.s),lepsilon=log(epsilon),
+               lT.0=log(1e3),lmu=log(mu))
+
+state <- c(V.b = floor(initial.titre*log(2) + 0.5),
+           V.m=0, N.m=T0, T.m=0, E.m=0, I.m=0,
+           V.l=0, N.l=T0, T.l=0, E.l=0, I.l=0,
+           V.d=0, N.d=T0, T.d=0, E.d=0, I.d=0, 
+           V.s=0, N.s=T0, T.s=0, E.s=0, I.s=0)
+
 
 ## Fit deterministic model
 ## Run with all four initial conditions and do a weighted sum
@@ -77,92 +87,141 @@ V.inf <- mean(log(2) * tail(10^fu$log10.mean.titre))
 ## Fit both of these with a poisson likelihood
 calc.V <- function(state,parms,times) {
     ## Oral infection can result in one of:
-    ## 1. constrained to midgut 1 - p.meb
-    ## 2. escapes midgut p.meb
-    ## 1.
-    V.tot.1 <- state["V.m"] * exp(-parms["c.m"] * times)
-
-    ## 2.
-    dat.2 = wv.BTV.barrier.det(times,state,parms)
-    V.tot.2 <- rowSums(dat.2[,c("V.m","V.s")])
-        
+    ## 1. no infection (1 - p.mib)
+    ## 2. constrained to midgut p.mib(1 - p.meb)
+    ## 3. escapes midgut, but not disseminated p.mib*p.meb*(1-p.db)
+    ## 4. disseminated infection p.mib*p.meb*p.db
+    ## 1. no infection (1 - p.mib)
+    state.1 <- state
+    dat.1 = wv.BTV.barrier.det(times,state.1,parms)
+    V.tot.1 <- rowSums(dat.1[,c("V.b","V.m","V.l","V.d","V.s")])
+    ## 2. constrained to midgut p.mib(1 - p.meb)
+    state.2 <- state.1
+    state.2["T.m"] <- state.1["N.m"]*(1-(1-p.mib)^(1/state.1["N.m"]))/p.mib
+    dat.2 = wv.BTV.barrier.det(times,state.2,parms)
+    V.tot.2 <- rowSums(dat.2[,c("V.b","V.m","V.l","V.d","V.s")])
+    
+    ## 3. escapes midgut, but not disseminated p.mib*p.meb
+    ## May need to tune the parameters to get the dissemination barrier, 
+    ## as it's a consequence of number of fat body cells productive and local viral clearance
+    state.3 <- state.2
+    state.3["T.l"] <- state.2["N.l"]#*(1-(1-p.meb)^(1/state.2["N.l"]))/p.meb
+    parms.3 <- parms
+    parms.3["d.l"] <- 0
+    dat.3 = wv.BTV.barrier.det(times,state.3,parms.3)
+    V.tot.3 <- rowSums(dat.3[,c("V.b","V.m","V.l","V.d","V.s")])
+    
+    ## 4. disseminated infection p.mib*p.meb*p.db (written assuming p.sgib=1)
+    state.4 <- state.3
+    state.4["T.d"] <- state.3["N.d"]#*(1-(1-p.db)^(1/state.3["N.d"]))/p.db
+    state.4["T.s"] <- state.3["N.s"]
+    dat.4 = wv.BTV.barrier.det(times,state.4,parms)
+    V.tot.4 <- rowSums(dat.4[,c("V.b","V.m","V.l","V.d","V.s")])
+    
     ## Get weighted sum
-    V.tot <- V.tot.1*(1-p.meb) + V.tot.2*p.meb
-    return(list(V.tot.1=V.tot.1,V.tot.2=V.tot.2,
-                V.tot=V.tot))
+    V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.meb) +
+        V.tot.1*p.mib*p.meb*(1-p.db) + V.tot.4*p.mib*p.meb*p.db
+    return(list(V.tot.1=V.tot.1,V.tot.2=V.tot.2,V.tot.3=V.tot.3,
+                V.tot.4=V.tot.4,V.tot=V.tot))
+}
+calc.V.it <- function(state,parms,times) {
+    ## Oral infection can result in one of:
+    state.it <- state
+    state.it["V.b"] <- 0
+    state.it["V.l"] <- initial.titre.it*log(2)/2
+    state.it["V.d"] <- initial.titre.it*log(2)/2
+    state.it["T.l"] <- state.it["N.l"]*(1-(1-p.meb)^(1/state.it["N.l"]))/p.meb
+    state.it["T.d"] <- state.it["N.d"]#*(1-(1-p.db)^(1/state.it["N.d"]))/p.db
+    state.it["T.s"] <- state.it["N.s"]
+
+    dat.it = wv.BTV.barrier.det(times,state.it,parms)
+    V.tot.it <- rowSums(dat.it[,c("V.b","V.m","V.l","V.d","V.s")])
+    return(list(V.tot.it=V.tot.it))
 }
 NLL <- function(pars) {
+    ## print(pars)
+    ## Secondary tissues, intrathoracic first
     with(as.list(pars),{
-        ## print(exp(lT.s0))
-        state <- c(V.m=V.0, T.m=exp(lT.s0)/(1+exp(lT.mult)), E.m=0, I.m=0,
-                   V.s=0, T.s=exp(lT.s0), E.s=0, I.s=0)
-        beta.m <- c.m * log(1/(1 - p.mib)) / as.numeric(state["T.m"]) / (V.0 - V.null)
-        parms <- c(c.m=c.m, beta.m=beta.m, epsilon.m=exp(lepsilon.m),
-                   p.m=exp(lp.m), p.s=exp(lp.m)*(1+exp(lp.mult)),
-                   c.s=exp(lp.m)*(1+exp(lp.mult))*exp(lT.s0)/V.inf, beta.s=beta.m,
-                   epsilon.s=exp(lepsilon.s))
-        V.tot <- calc.V(state,parms,times)$V.tot
-        titre.total <- V.tot[data.hours]
+        ## Oral infection first
+        c.m <- as.numeric(exp(lc.m))
+        c.l <- as.numeric(exp(lc.l))
+        c.s <- as.numeric(exp(lc.s))
+        beta <- as.numeric(exp(lbeta))
+        d <- as.numeric(plogis(logitd))
+        p.m <- as.numeric(exp(lp.m))
+        p.s <- as.numeric(exp(lp.s))
+        T.0 <- as.numeric(exp(lT.0))
+        epsilon <- as.numeric(exp(lepsilon))
+        mu <- as.numeric(exp(mu))
+       
+        ## state["N.m"] <- floor(as.numeric(exp(lN))+0.5)
+        ## state["N.l"] <- floor(as.numeric(exp(lN))+0.5)
+        ## state["N.d"] <- floor(as.numeric(exp(lN))+0.5)
+        ## state["N.s"] <- floor(as.numeric(exp(lN.s))+0.5)
+        parms <- c(c.b=c.m, beta.b=beta,
+                   c.m=c.m, epsilon.m=epsilon, d.m = d, p.m=p.m, beta.m=beta, T0.m=T0, mu.m=mu, mui.m=mu,
+                   c.l=c.l, epsilon.l=epsilon, d.l = d, p.l=p.m, beta.l=beta, T0.l=T0, mu.l=mu, mui.l=mu,
+                   c.d=c.s, epsilon.d=epsilon, d.d = d, p.d=p.s, beta.d=beta, T0.d=T0, mu.d=mu, mui.d=mu,
+                   c.s=c.s, epsilon.s=epsilon, d.s = d, p.s=p.s, beta.s=beta, T0.s=T0, mu.s=mu, mui.s=mu)
+        
+        V.out <- calc.V(state,parms,times)
+        pos.adj <- (prop.positive.vec - prop.disseminated)/(1 - prop.disseminated)
+        titre.total <- (V.out$V.tot + V.out$V.tot.1 * p.mib * pos.adj)[data.hours]
+
+        ## Now intrathoracic
+        ##V.tot.it <- calc.V.it(state,parms,times)$V.tot.it
+        ##titre.total.it <- V.tot.it[data.hours.it]
         return(-sum(dpois(titre.data,titre.total,log=TRUE)))
-    })
-}
-LL <- function(par) {
-    names(par) <- names(lower)
-    with(as.list(par),{
-        ## print(exp(lT.s0))
-        state <- c(V.m=V.0, T.m=T.s0/T.mult, E.m=0, I.m=0,
-                   V.s=0, T.s=T.s0, E.s=0, I.s=0)
-        beta.m <- c.m * log(1/(1 - p.mib)) / as.numeric(state["T.m"]) / (V.0 - V.null)
-        parms <- c(c.m=c.m, beta.m=beta.m, epsilon.m=epsilon.m,
-                   p.m=p.m, p.s=p.m*p.mult,
-                   c.s=p.m*p.mult*T.s0/V.inf, beta.s=beta.s,
-                   epsilon.s=epsilon.s)
-        V.tot <- calc.V(state,parms,times)$V.tot
-        titre.total <- V.tot[data.hours]
-        return(sum(dpois(titre.data,titre.total,log=TRUE)))
+        ##-sum(dpois(titre.data.it,titre.total.it,log=TRUE)))
     })
 }
 
-## Fit with optim
-pars.init <- c(lT.s0=log(1e5),lT.mult=log(9),
-               lepsilon.m=log(2),lepsilon.s=log(3),lp.m=log(1),lp.mult=log(9))
 optim.out <- optim(pars.init,NLL,control=list(maxit=5e3))
-## save(optim.out,file="optim_out_barriers.RData")
-## load("optim_out_barriers.RData")
-
-## Fit with Bayesian Tools
-lower <- c(T.s0=1e3,T.mult=1,beta.s=1e-7,
-           epsilon.m=1,epsilon.s=1,p.m=1e-3,p.mult=1)
-upper <- c(T.s0=1e6,T.mult=1e2,beta.s=1e-3,
-           epsilon.m=5,epsilon.s=5,p.m=1e3,p.mult=1e3)
-bayesianSetup = createBayesianSetup(LL,lower=lower,upper=upper)
-mcmc.out = runMCMC(bayesianSetup,settings=list(iterations=1e5))
+save(optim.out,file="optim_out_barriers.RData")
+load("optim_out_barriers.RData")
 
 ## Now get new parameters and plot
-samples = getSample(mcmc.out,start=25000)
-state <- c(V.m=V.0, T.m=mean(samples[,1])/(1+mean(samples[,2])), E.m=0, I.m=0,
-           V.s=0, T.s=mean(samples[,1]), E.s=0, I.s=0)
-beta.m <- c.m * log(1/(1 - p.mib)) / as.numeric(state["T.m"]) / (V.0 - V.null)
-parms <- c(c.m=c.m, beta.m=beta.m, epsilon.m=mean(samples[,3]),
-           p.m=mean(samples[,5]), p.s=mean(samples[,5])*(1+mean(samples[,6])),
-           c.s=mean(samples[,5])*(1+mean(samples[,6]))*mean(samples[,1])/V.inf, beta.s=beta.m,
-           epsilon.s=mean(samples[,4]))
+c.m <- as.numeric(exp(optim.out$par["lc.m"]))
+c.l <- as.numeric(exp(optim.out$par["lc.l"]))
+c.s <- as.numeric(exp(optim.out$par["lc.s"]))
+beta <- as.numeric(exp(optim.out$par["lbeta"]))
+d <- as.numeric(plogis(optim.out$par["logitd"]))
+## d <- as.numeric(exp(optim.out$par["ld"]))
+p.m <- as.numeric(exp(optim.out$par["lp.m"]))
+p.s <- as.numeric(exp(optim.out$par["lp.s"]))
+epsilon <- as.numeric(exp(optim.out$par["lepsilon"]))
+T.0 <- as.numeric(exp(optim.out$par["lT.0"]))
+mu <- as.numeric(exp(optim.out$par["lmu"]))
+parms <- c(c.b=c.m, beta.b=beta,
+           c.m=c.m, epsilon.m=epsilon, d.m = d, p.m=p.m, beta.m=beta, T0.m=T0, mu.m=mu, mui.m=mu,
+           c.l=c.l, epsilon.l=epsilon, d.l = d, p.l=p.m, beta.l=beta, T0.l=T0, mu.l=mu, mui.l=mu,
+           c.d=c.s, epsilon.d=epsilon, d.d = d, p.d=p.s, beta.d=beta, T0.d=T0, mu.d=mu, mui.d=mu,
+           c.s=c.s, epsilon.s=epsilon, d.s = d, p.s=p.s, beta.s=beta, T0.s=T0, mu.s=mu, mui.s=mu)
 V.tots <- calc.V(state,parms,times)
-plot(times,V.tots$V.tot,log="y",type="l",lwd=3,ylim=c(1,1e4))
+pos.adj <- (prop.positive.vec - prop.disseminated)/(1 - prop.disseminated)
+titre.total <- (V.tots$V.tot + V.tots$V.tot.1 * p.mib * pos.adj)
+plot(times,titre.total,log="y",type="l",lwd=3,ylim=c(1,1e10))
 lines(times,V.tots$V.tot.1,col="red",lwd=2)
 points(fu$Time.pi..hours.,10^fu$log10.mean.titre*log(2))
 abline(h=10^0.75,lty="dashed")
+##V.tots.it <- calc.V.it(state,parms,times)
+##plot(times,V.tots.it$V.tot.it,log="y",type="l",lwd=3,ylim=c(1e2,1e6))
+##lines(times,V.tots$V.tot.1,col="red",lwd=2)
+##points(fu.intrathoracic.hours,fu.intrathoracic$titre*log(2))
+##abline(h=10^0.75,lty="dashed")
 
 ## Run stochastic model
 n.sims <- 1000
-trajs <- array(NA,dim=c(n.sims,dim(wv.BTV.barrier.stoch(times,state,parms))),
+trajs <- array(NA,dim=c(n.sims,dim(wv.BTV.barrier.stoch(times,state,parms,barrier.probs))),
                dimnames=list(1:n.sims,
-                             rownames(wv.BTV.barrier.stoch(times,state,parms)),
-                             colnames(wv.BTV.barrier.stoch(times,state,parms))))
+                             rownames(wv.BTV.barrier.stoch(times,state,parms,barrier.probs)),
+                             colnames(wv.BTV.barrier.stoch(times,state,parms,barrier.probs))))
 
 ## trajs <- list()
 for (iii in 1:n.sims) {
-    trajs[iii,,] <- as.matrix(wv.BTV.barrier.stoch(times,state,parms))
+    ## print(iii)
+    ## trajs[[iii]] <- wv.BTV.barrier.stoch(times,state,parms,barrier.probs)
+    trajs[iii,,] <- as.matrix(wv.BTV.barrier.stoch(times,state,parms,barrier.probs))
 }
 
 ## Plot
