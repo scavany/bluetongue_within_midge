@@ -1,134 +1,143 @@
-## hybrid model
-wv.BTV.barrier = function(t,
-                          N.m=0,N.l=0,N.d=0,N.s=0,N.o=0,
-                          p.mib=1,p.meb=1,p.db=1,p.sgib=1,p.sgeb=1,p.totb=1,
-                          lambda.m,lambda.l,lambda.d,lambda.s,lambda.o,
-                          c.m,c.h,
-                          lp.m,lp.l,lp.d,lp.s,lp.o,
-                          dp.m,dp.l,dp.d,dp.s,dp.o)
-{
-   0
-}
-
-## deterministic model
+## deterministic models
 wv.BTV.barrier.det = function(t, state, parameters)
 {
     wv.BTV.odes <- function(t,state,parameters) {
         with(as.list(c(state, parameters)),{
-            dV.b = -c.b * V.b
+            dV.b = -beta.b * V.b * T.m - c.b * V.b
 
-            dV.m = -(beta.b * V.b + beta.m * V.m) * T.m + d.l * p.l * I.l +
+            dV.m = -beta.m * V.m * T.m + d.s * p.s * I.s +
                 (1 - d.m) * p.m * I.m - c.m * V.m
-            dT.m = -(beta.b * V.b + beta.m * V.m) * T.m + mu.m * (T0.m - T.m) 
-            dE.m = (beta.b * V.b + beta.m * V.m) * T.m - mu.m * E.m - E.m / epsilon.m
-            dI.m = E.m / epsilon.m - mui.m * I.m
+            dT.m = -(beta.b * V.b + beta.m * V.m) * T.m + mu.m * (T0.m - T.m)
+            if (epsilon.m == 0) {
+                dE.m = 0
+                dI.m = (beta.b * V.b + beta.m * V.m) * T.m - mui.m * I.m
+            } else {
+                dE.m = (beta.b * V.b + beta.m * V.m) * T.m - E.m / epsilon.m - mu.m * E.m
+                dI.m = epsilon.m * E.m - mui.m * I.m
+            }
 
-            dV.l = -beta.l * T.l * V.l + d.m * p.m * I.m + d.d * p.d * I.d +
-                (1 - 2 * d.l) * p.l * I.l - c.l * V.l
-            dT.l = -beta.l * T.l * V.l + mu.l * (T0.l - T.l) 
-            dE.l = beta.l * T.l * V.l  - E.l / epsilon.l - mu.l * E.l
-            dI.l = E.l / epsilon.l - mui.l * I.l
-
-            dV.d = -beta.d * T.d * V.d + d.l * p.l * I.l + d.s * p.s * I.s +
-                (1 - 2 * d.d) * p.d * I.d - c.d * V.d
-            dT.d = -beta.d * T.d * V.d + mu.d * (T0.d - T.d) 
-            dE.d = beta.d * T.d * V.d - E.d / epsilon.d - mu.d * E.d
-            dI.d = E.d / epsilon.d - mui.d * I.d
-
-            dV.s = beta.s * T.s * V.s + d.d * p.d * I.d + p.s * (1 - d.s) * I.s - c.s * V.s
-            dT.s = -beta.s * T.s * V.s + mu.s * (T0.s - T.s) 
-            dE.s = beta.s * T.s * V.s - E.s / epsilon.s - mu.s * E.s
-            dI.s = E.s / epsilon.s - mui.s * I.s
+            dV.s = -beta.s * T.s * V.s + (1 - d.s) * p.s * I.s +
+                d.m * p.m * I.m - c.s * V.s
+            dT.s = -beta.s * T.s * V.s + mu.s * (T0.s - T.s)
+            if (epsilon.s == 0) {
+                dE.s = 0
+                dI.s = beta.s * V.s * T.s - mui.s * I.s
+            } else {
+                dE.s = beta.s * V.s * T.s - E.s / epsilon.s - mu.s * E.s
+                dI.s = E.s / epsilon.s - mui.s * I.s
+            }
             list(c(dV.b,
-                   dV.m, 0, dT.m, dE.m, dI.m,
-                   dV.l, 0, dT.l, dE.l, dI.l,
-                   dV.d, 0, dT.d, dE.d, dI.d,
-                   dV.s, 0, dT.s, dE.s, dI.s))
+                   dV.m, dT.m, dE.m, dI.m,
+                   dV.s, dT.s, dE.s, dI.s))
         })
     }
     out <- as.data.frame(ode(state,t,wv.BTV.odes,parameters))
     return(out)
 }
 
-## stochastic model - needs a slight revamp
+calc.V <- function(state,parms,times) {
+    ## Oral infection can result in one of:
+    ## 1. no infection (1 - p.mib)
+    ## 2. constrained to midgut p.mib(1 - p.meb*p.db)
+    ## 3. Fully disseminated p.mib*p.meb*p.db
+    ## 1. no infection (1 - p.mib)
+    state.1 <- state
+    parms.1 <- parms
+    parms.1["T0.m"] <- 0
+    parms.1["T0.s"] <- 0
+    dat.1 = wv.BTV.barrier.det(times,state.1,parms.1)
+    V.tot.1 <- rowSums(dat.1[,grepl("V.",names(dat.1))])
+
+    ## 2. constrained to midgut p.mib(1 - p.meb*p.db)
+    state.2 <- state.1
+    state.2["T.m"] <- parms["T0.m"]
+    parms.2 <- parms
+    parms.2["d.m"] <- 0 ## Could also do this with T0
+    parms.2["T0.s"] <- 0
+    dat.2 = wv.BTV.barrier.det(times,state.2,parms)
+    V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
+    
+    ## 3. disseminated infection p.mib*p.meb*p.db (written assuming p.sgib=1)
+    ## May need to tune the parameters to get the dissemination barrier, 
+    ## as it's a consequence of number of fat body cells productive and local viral clearance
+    state.3 <- state.2
+    state.3["T.s"] <- parms["T0.s"]
+    parms.3 <- parms
+    dat.3 = wv.BTV.barrier.det(times,state.3,parms.3)
+    V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
+        
+    ## Get weighted sum
+    V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.db) +
+        V.tot.3*p.mib*p.db
+    V.tot.pos <- V.tot.2*(1-p.db) + V.tot.3*p.db
+    return(list(V.tot.1=V.tot.1,V.tot.2=V.tot.2,V.tot.3=V.tot.3,
+                V.tot=V.tot,V.tot.pos=V.tot.pos))
+}
+calc.V.it <- function(state,parms,times) {
+    ## Oral infection can result in one of:
+    state.it <- state
+    state.it["V.b"] <- 0
+    state.it["V.s"] <- initial.titre.it
+    state.it["T.s"] <- parms["T0.s"]
+
+    dat.it = wv.BTV.barrier.det(times,state.it,parms)
+    V.tot.it <- rowSums(dat.it[,grepl("V.",names(dat.it))])
+    return(list(V.tot.it=V.tot.it))
+}
+
+## stochastic models
 wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
 
-    ## Calculate available target cells
-    state[["T.m"]] <- rbinom(1, state[["N.m"]],
-                             1-(1-barrier.probs[["p.mib"]])^(1/state[["N.m"]]))
-    state[["T.l"]] <- ifelse(runif(1) < barrier.probs[["p.meb"]],state[["N.l"]],0)
-    parms[["d.d"]] <- ifelse(runif(1) < barrier.probs[["p.db"]],parms[["d.d"]],0)
-    state[["T.s"]] <- rbinom(1, state[["N.s"]],
-                             1-(1-barrier.probs[["p.sgib"]])^(1/state[["N.s"]]))
+    ## ## Calculate available target cells - commenting out, as would make more sense to do this outside of function or in wrapper function
+    ## state[["T.m"]] <- rbinom(1, state[["N.m"]],
+    ##                          1-(1-barrier.probs[["p.mib"]])^(1/state[["N.m"]]))
+    ## state[["T.l"]] <- ifelse(runif(1) < barrier.probs[["p.meb"]],state[["N.l"]],0)
+    ## parms[["d.d"]] <- ifelse(runif(1) < barrier.probs[["p.db"]],parms[["d.d"]],0)
+    ## state[["T.s"]] <- rbinom(1, state[["N.s"]],
+    ##                          1-(1-barrier.probs[["p.sgib"]])^(1/state[["N.s"]]))
 
     ## Transitions matrix
+    epsilon.m <- parms["epsilon.m"]
+    epsilon.s <- parms["epsilon.s"]
     wv.BTV.transitions <- list(
         c(V.b=-1), 
-        c(T.m=-1,E.m=1,V.b=-1),
+        c(T.m=-1,V.b=-1,E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,1,0)),
+
         c(V.m=1), 
         c(V.m=-1), 
-        c(T.m=-1,E.m=1,V.m=-1),
-        c(E.m=-1,I.m=1),
+        c(T.m=-1,V.m=-1,E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,1,0)),
+        c(E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,0,1)),
         c(T.m=1),
         c(E.m=-1),
         c(I.m=-1),
-        c(V.l=1), 
-        c(V.l=-1), 
-        c(T.l=-1,E.l=1,V.l=-1),
-        c(E.l=-1,I.l=1),
-        c(T.l=1),
-        c(E.l=-1),
-        c(I.l=-1),
-        c(V.d=1), 
-        c(V.d=-1), 
-        c(T.d=-1,E.d=1,V.d=-1),
-        c(E.d=-1,I.d=1),
-        c(T.d=1),
-        c(E.d=-1),
-        c(I.d=-1),
+        
         c(V.s=1), 
         c(V.s=-1), 
-        c(T.s=-1,E.s=1,V.s=-1),
-        c(E.s=-1,I.s=1),
+        c(T.s=-1,V.s=-1,E.s=ifelse(epsilon.s==0,0,1),I.s=ifelse(epsilon.s==0,1,0)),
+        c(E.s=ifelse(epsilon.s==0,0,1),I.s=ifelse(epsilon.s==0,0,1)),
         c(T.s=1),
         c(E.s=-1),
         c(I.s=-1)
     )
-    #vir prod, vir death, infection, progression, new cells, E death, I death
+    ## Rates function
     wv.BTV.rates <- function(state, parameters, t)
     {
         with(as.list(c(state, parameters)),{
             return(c(c.b * V.b,
                      beta.b * V.b * T.m,
                      
-                     (1 - d.m) * p.m * I.m + d.l * p.l * I.l,
+                     (1 - d.m) * p.m * I.m + d.s * p.s * I.s,
                      c.m * V.m,
                      beta.m * V.m * T.m,
-                     E.m/epsilon.m,
+                     ifelse(epsilon.m==0,0,E.m / epsilon.m),
                      (T0.m - T.m) * mu.m,
                      E.m * mu.m,
                      I.m * mui.m,
 
-                     d.m * p.m * I.m + d.d * p.d * I.d + (1 - 2 * d.l) * p.l * I.l,
-                     c.l * V.l,
-                     beta.l * T.l * V.l,
-                     E.l/epsilon.l,
-                     (T0.l - T.l) * mu.l,
-                     E.l * mu.l,
-                     I.l * mui.l,
-
-                     d.l * p.l * I.l + d.s * p.s * I.s + (1 - 2 * d.d) * p.d * I.d,
-                     c.d * V.d,
-                     beta.d * T.d * V.d,
-                     E.d/epsilon.d,
-                     (T0.d - T.d) * mu.d,
-                     E.d * mu.d,
-                     I.d * mui.d,
-
-                     d.d * p.d * I.d + p.s * (1 - d.s) * I.s,
+                     d.m * p.m * I.m + p.s * (1 - d.s) * I.s,
                      c.s * V.s,
                      beta.s * T.s * V.s,
-                     E.s/epsilon.s,
+                     ifelse(epsilon.s==0,0,E.s / epsilon.s),
                      (T0.s - T.s) * mu.s,
                      E.s * mu.s,
                      I.s * mui.s
@@ -144,6 +153,7 @@ wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
     }))
     return(as.data.frame(out))
 }
+
 
 wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=production.fn.a,
                                        prod.fn.b=production.fn.b, prod.fn.r=production.fn.r)
@@ -278,3 +288,20 @@ wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=productio
                dI.sbrnn))
     })
 }
+
+
+tuncer.wv = function(t, state, parameters) # https://www.tandfonline.com/doi/full/10.1080/17513758.2021.1970261
+{
+    wv.odes <- function(t,state,parameters) {
+        with(as.list(c(state, parameters)),{
+            dPm = rm * Pm * (1 - Pm / Km) - mt * Pm
+            dPs = mt * Pm^2 / (B + Pm^2) + rs * Ps * (1 - Ps /Ks)
+            list(c(dPm, dPs))
+        })
+    }
+    out <- as.data.frame(ode(state,t,wv.odes,parameters))
+    return(out)
+}
+
+## parms <- c(rm=1.26,Km=4.33e5,mt=0.11,B=1.95e4,rs=1.77,Ks=6.84e6)
+## state <- c(Pm=1e3,Ps=0)
