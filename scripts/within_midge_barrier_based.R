@@ -23,6 +23,7 @@ source("./within_midge_barrier_based_fn.R")
 fu <- read.csv("../data/Fu_data.csv",header=T)
 initial.titre <- 10^fu$log10.mean.titre[1]
 equilibrium.titre <- mean(tail(10^fu$log10.mean.titre)) ##Should this be the mean of the log10??
+lod <- 10^0.75
 
 ## Hemocoel only
 fu.intrathoracic <- read.csv("../data/Fu_data_intrathoracic.csv",header=T)
@@ -49,15 +50,18 @@ logistic.optim.fn <- function(par) {
 }
 logistic.optim.out <- optim(c(0.4,1,0),logistic.optim.fn)
 logistic.optim.out
-## plot(times,prop.positive.fn(times,logistic.optim.out$par[1],
-##                             logistic.optim.out$par[2],
-##                             logistic.optim.out$par[3]),type='l',
-##      ylim=c(0,1),ylab="Proportion positive")
-## points(fu$Time.pi..hours.,fu$Detection.rate)
+plot(times,prop.positive.fn(times,logistic.optim.out$par[1],
+                            logistic.optim.out$par[2],
+                            logistic.optim.out$par[3]),type='l',
+     ylim=c(0,1),ylab="Proportion positive")
+points(fu$Time.pi..hours.,fu$Detection.rate)
 prop.positive.vec <- prop.positive.fn(times,logistic.optim.out$par[1],
                                       logistic.optim.out$par[2],
                                       logistic.optim.out$par[3])
 prop.disseminated <- min(prop.positive.vec)
+
+## Get expression for cb and cm
+c.m <- log(initial.titre/lod) / logistic.optim.out$par[3]
 
 ## Barrier probabilities
 p.mib=1/3;p.db=0.12
@@ -87,113 +91,76 @@ sample.out <- as.data.frame(getSample(mcmc.out,start=1.5e6))
 MAP.out <- MAP(mcmc.out,start=1.5e6)$parametersMAP
 
 ### Simple parameter exploration
-## contour of probability of zero infections, mechanism: bloodmeal depletion before infection
-## Make this max out at a third, and instead show parameter combinations which certain dose response would give.
-## Also show the dose-response curve? For modal parameter set?
-c <- 10^seq(-2,1,0.1)
-beta.T.m <- 10^seq(-5,-1,0.1)
-n.virions <- initial.titre*log(2)
-prob.0 <- expand.grid(c=c,beta.T.m=beta.T.m)
-prob.0$prob.0 <- (prob.0$c / (prob.0$c + prob.0$beta.T.m)) ^ n.virions
-zmat <- matrix(prob.0$prob.0,nrow=length(c),ncol=length(beta.T.m))
-## c.m vs beta.m*T.m to give probability of a third
-prob.per.virion <- (1/3)^(1/n.virions)
-beta.T.m.baseline <- c * (1 - prob.per.virion) / prob.per.virion
-temp.df <- data.frame(sample.out$c.m,sample.out$beta.m*sample.out$T0.m)
-median.out <- sapply(temp.df,median)
-mean.out <- colMeans(temp.df)
-mode.out <- c(MAP.out["c.m"],MAP.out["beta.m"]*MAP.out["T0.m"])
-cov.out <- cov(temp.df)
-ell.25 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.25,draw=FALSE)
-ell.05 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.05,draw=FALSE)
+## contour of probability of zero infections, mechanism: bloodmeal depletion before infection,
+## but with an MIB
+beta.T.m <- 10^seq(-5,-2,0.1)
+n.virions <- 10^seq(0,log(10*initial.titre*log(2),10),0.1)
+prob.0 <- expand.grid(n.virions=n.virions,beta.T.m=beta.T.m)
+prob.0$prob.0 <- p.mib * (1 - (c.m / (c.m + prob.0$beta.T.m)) ^ prob.0$n.virions)
+zmat <- matrix(prob.0$prob.0,nrow=length(n.virions),ncol=length(beta.T.m))
+mode.out <- MAP.out["beta.m"]*MAP.out["T0.m"]
+q.5 <- quantile(sample.out$beta.m*sample.out$T0.m,c(0.25,0.75))
+q.05 <- quantile(sample.out$beta.m*sample.out$T0.m,c(0.025,0.975))
 ## plot
-filled.contour(log(c,10),log(beta.T.m,10),zmat,
-               plot.title = title("Probability that no midgut cells are infected",
-                                  xlab=expression(c[m]),ylab=expression(paste(beta,T[m]))),
+filled.contour(log(n.virions,10),log(beta.T.m,10),zmat,
+               plot.title = title("Probability that at least one midgut cell is infected",
+                                  xlab="Initial number of virions",
+                                  ylab=expression(paste(beta,T[m]))),
                axes=FALSE,
-               plot.axes={axis(1,at=pretty(range(log(c,10)),6),
-                               labels=round(10^pretty(range(log(c,10)),6),2));
-                               axis(2,at=pretty(range(log(beta.T.m,10)),6),
-                                    labels=round(10^pretty(range(log(beta.T.m,10)),6),4));
-                               lines(log(c,10),log(beta.T.m.baseline,10),lwd=3);
-                               lines(log(ell.25,10),lwd=2);
-                               lines(log(ell.05,10),lwd=2,lty="dashed");
-                               ## points(median.out[1],median.out[2],pch=1)
-                               ## points(mean.out[1],mean.out[2],pch=20)
-                               points(log(mode.out[1],10),log(mode.out[2],10),pch=20)
-                               text((min(log(c,10)) + 3 * max(log(c,10)))/4,
-                                    (min(log(beta.T.m.baseline,10))  + 3 * max(log(beta.T.m.baseline,10)))/4,
-                                    labels="P = 1/3", font=2,
-                                    srt=atan(diff(range(log(beta.T.m.baseline,10)))/diff(range(log(c,10))))*180/pi,
-                                    pos=3)},
+               plot.axes={axis(1,at=pretty(range(log(n.virions,10)),6),
+                               labels=round(10^pretty(range(log(n.virions,10)),6),2));
+                               axis(2,at=pretty(range(log(beta.T.m,10)),5),
+                                    labels=round(10^pretty(range(log(beta.T.m,10)),5),5));
+                               abline(v=log(initial.titre*log(2),10),lty=2,lwd=2);
+                               points(log(initial.titre*log(2),10),log(mode.out,10),
+                                      pch=20,cex=2);
+                               lines(c(0.98,1.02)*log(initial.titre*log(2),10),
+                                     log(rep(q.5[1],2),10));
+                               lines(c(0.98,1.02)*log(initial.titre*log(2),10),
+                                     log(rep(q.5[2],2),10));
+                               lines(c(0.98,1.02)*log(initial.titre*log(2),10),
+                                     log(rep(q.05[1],2),10),lty=3);
+                               lines(c(0.98,1.02)*log(initial.titre*log(2),10),
+                                     log(rep(q.05[2],2),10),lty=3);
+               },
                key.axes=axis(4,at=pretty(zmat)),
                color=colorRampPalette(brewer.pal(9,"Reds")))
 
-## Plot the R0 as a function of c and p/mu.i, assuming that 1/3 of midgut infections are established
-p.mu.i <- 10^seq(0,4,0.1)
-R0 <- expand.grid(c=c,p.mu.i=p.mu.i)
-R0$beta.T.m <- beta.T.m.baseline[match(R0$c,c)]
-R0$R0 <- R0$beta.T.m / (R0$c + R0$beta.T.m) * R0$p.mu.i
-zmat <- matrix(R0$R0,nrow=length(c),ncol=length(p.mu.i))
-temp.df <- data.frame(sample.out$c.m,sample.out$p.m*sample.out$mu.m)
-median.out <- sapply(temp.df,median)
-mean.out <- colMeans(temp.df)
-mode.out <- c(MAP.out["c.m"],MAP.out["p.m"]*MAP.out["mu.m"])
-cov.out <- cov(temp.df)
-ell.25 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.25,draw=FALSE)
-ell.05 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.05,draw=FALSE)
+## as above, but vary p.mib
+beta.T.m <- 10^seq(-5,-2,0.1)
+n.virions <- log(2) * initial.titre
+p.mib.vec <- seq(0,1,0.01)
+prob.0 <- expand.grid(p.mib=p.mib.vec,beta.T.m=beta.T.m)
+prob.0$prob.0 <- prob.0$p.mib * (1 - (c.m / (c.m + prob.0$beta.T.m)) ^ n.virions)
+zmat <- matrix(prob.0$prob.0,nrow=length(p.mib.vec),ncol=length(beta.T.m))
+mode.out <- MAP.out["beta.m"]*MAP.out["T0.m"]
+q.5 <- quantile(sample.out$beta.m*sample.out$T0.m,c(0.25,0.75))
+q.05 <- quantile(sample.out$beta.m*sample.out$T0.m,c(0.025,0.975))
 ## plot
-filled.contour(log(c,10),log(p.mu.i,10),zmat,
-               plot.title = title("Midgut R0, assuming 1/3 of infections establish in midgut",
-                                  xlab=expression(c[m]),ylab=expression(paste(p,"/",mu[i]))),
+filled.contour(p.mib.vec,log(beta.T.m,10),zmat,
+               plot.title = title("Probability that at least one midgut cell is infected",
+                                  xlab="Probability of an MIB",
+                                  ylab=expression(paste(beta,T[m]))),
                axes=FALSE,
-               plot.axes={axis(1,at=pretty(range(log(c,10)),6),
-                               labels=round(10^pretty(range(log(c,10)),6),2));
-                               axis(2,at=pretty(range(log(p.mu.i,10)),6),
-                                    labels=round(10^pretty(range(log(p.mu.i,10)),6),4));
-                               lines(log(c,10),log(1+c/beta.T.m.baseline,10),lwd=3);
-                               lines(log(ell.25,10),lwd=2);
-                               lines(log(ell.05,10),lwd=2,lty="dashed");
-                               ## points(median.out[1],median.out[2],pch=1)
-                               ## points(mean.out[1],mean.out[2],pch=20)
-                               points(log(mode.out[1],10),log(mode.out[2],10),pch=20)
-},
+               plot.axes={axis(1,at=pretty(range(p.mib.vec),6),
+                               labels=round(pretty(range(p.mib.vec),6),2));
+                               axis(2,at=pretty(range(log(beta.T.m,10)),5),
+                                    labels=round(10^pretty(range(log(beta.T.m,10)),5),5));
+                               abline(v=p.mib,lty=2,lwd=2);
+                               points(p.mib,log(mode.out,10),
+                                      pch=20,cex=2);
+                               lines(c(0.96,1.04)*p.mib,
+                                     log(rep(q.5[1],2),10));
+                               lines(c(0.96,1.04)*p.mib,
+                                     log(rep(q.5[2],2),10));
+                               lines(c(0.96,1.04)*p.mib,
+                                     log(rep(q.05[1],2),10),lty=3);
+                               lines(c(0.96,1.04)*p.mib,
+                                     log(rep(q.05[2],2),10),lty=3);
+               },
                key.axes=axis(4,at=pretty(zmat)),
                color=colorRampPalette(brewer.pal(9,"Reds")))
 
-## Plot the R0 as a function of Bt0/(Bt0 + c) and p/mu.i, assuming that 1/3 of midgut infections are established
-beta.T.m.c <- 10^seq(-5,-1,0.1)
-p.mu.i <- 10^seq(2,6,0.1)
-R0 <- expand.grid(beta.T.m.c=beta.T.m.c,p.mu.i=p.mu.i)
-R0$R0 <- R0$beta.T.m.c * R0$p.mu.i
-zmat <- matrix(R0$R0,nrow=length(beta.T.m.c),ncol=length(p.mu.i))
-temp.df <- data.frame(sample.out$beta.m/(sample.out$beta.m+sample.out$c.m),
-                      sample.out$p.m/sample.out$mu.m)
-median.out <- sapply(temp.df,median)
-mean.out <- colMeans(temp.df)
-mode.out <- c(MAP.out["beta.m"]/(MAP.out["beta.m"]+MAP.out["c.m"]),
-              MAP.out["p.m"]/MAP.out["mu.m"])
-cov.out <- cov(temp.df)
-ell.25 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.25,draw=FALSE)
-ell.05 <- ellipse(mean.out,cov.out,lwd=2,alpha=0.05,draw=FALSE)
-## plot
-filled.contour(log(beta.T.m.c,10),log(p.mu.i,10),zmat,
-               plot.title = title("Midgut R0",
-                                  xlab=expression(paste(beta,"/(",beta,"+",c[m],")")),
-                                  ylab=expression(paste(p,"/",mu[i]))),
-               axes=FALSE,
-               plot.axes={axis(1,at=pretty(range(log(beta.T.m.c,10)),6),
-                               labels=round(10^pretty(range(log(beta.T.m.c,10)),6),6));
-                               axis(2,at=pretty(range(log(p.mu.i,10)),6),
-                                    labels=round(10^pretty(range(log(p.mu.i,10)),6),4));
-                               lines(log(beta.T.m.c,10),log(1/beta.T.m.c,10),lwd=3);
-                               lines(log(ell.25,10),lwd=2);
-                               lines(log(ell.05,10),lwd=2,lty="dashed");
-                               ## points(median.out[1],median.out[2],col="white",pch=1)
-                               ## points(mean.out[1],mean.out[2],col="white",pch=20)
-                               points(log(mode.out[1],10),log(mode.out[2],10),pch=20)},
-               key.axes=axis(4,at=pretty(zmat)),
-               color=colorRampPalette(brewer.pal(9,"Reds")))
 
 
 ## Fit deterministic model
