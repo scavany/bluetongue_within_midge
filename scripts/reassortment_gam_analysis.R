@@ -70,7 +70,7 @@ par(mfrow=c(1,2))
 plot(g.log,trans=plogis,shift=coef(g.log)[1],
      seWithMean=TRUE,shade=TRUE,rug=FALSE,select=1,
      xlab="Time of measurement (days)",
-     ylab="Proportion reassortant")
+     ylab="Proportion reassortant",bty="n",las=1)
 for (t in unique(combined.binary$time)) {
     points(t,sum(combined.binary[time==t]$reassortant) /
                 length(combined.binary[time==t]$reassortant))
@@ -78,7 +78,7 @@ for (t in unique(combined.binary$time)) {
 plot(g.log,trans=plogis,shift=coef(g.log)[1],
      seWithMean=TRUE,shade=TRUE,rug=FALSE,select=2,
      xlab="Gap between infections (days)",
-     ylab="")
+     ylab="",bty="n",las=1)
 for (t in unique(combined.binary$gap)) {
     points(t,sum(combined.binary[gap==t]$reassortant) /
                 length(combined.binary[gap==t]$reassortant))
@@ -86,6 +86,8 @@ for (t in unique(combined.binary$gap)) {
 dev.off()
 
 gam.check(g.log)
+
+save(g.log,combined.binary,file="gam_output_and_data.RData")
 
 ## Do a SCAM
 s.log <- scam(reassortant~s(time,bs="mpi")+s(gap,bs="mpd"),

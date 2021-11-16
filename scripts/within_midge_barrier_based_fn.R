@@ -3,32 +3,36 @@ wv.BTV.barrier.det = function(t, state, parameters)
 {
     wv.BTV.odes <- function(t,state,parameters) {
         with(as.list(c(state, parameters)),{
-            dV.b = -beta.b * V.b * T.m - c.b * V.b
+            dV.b = -beta.b * V.b * (T.m + E.m) - c.b * V.b
 
-            dV.m = -beta.m * V.m * T.m + d.s * p.s * I.s +
-                (1 - d.m) * p.m * I.m - c.m * V.m
+            dV.m = -beta.m * V.m * (T.m + E.m) + d.s * p.s * (I.s + I.ss) +
+                (1 - d.m) * p.m * (I.m + I.mm) - c.m * V.m
             dT.m = -(beta.b * V.b + beta.m * V.m) * T.m + mu.m * (T0.m - T.m)
             if (epsilon.m == 0) {
-                dE.m = 0
+                dE.m = -mu.m * E.m
                 dI.m = (beta.b * V.b + beta.m * V.m) * T.m - mui.m * I.m
             } else {
-                dE.m = (beta.b * V.b + beta.m * V.m) * T.m - E.m / epsilon.m - mu.m * E.m
-                dI.m = epsilon.m * E.m - mui.m * I.m
+                dE.m = (beta.b * V.b + beta.m * V.m) * (T.m - E.m) - E.m / epsilon.m - mu.m * E.m
+                dI.m = E.m / epsilon.m - mui.m * I.m
+                dE.mm = (beta.b * V.b + beta.m * V.m) * E.m - E.mm / epsilon.m - mu.m * E.mm
+                dI.mm = E.mm / epsilon.m - mui.m * I.mm
             }
 
-            dV.s = -beta.s * T.s * V.s + (1 - d.s) * p.s * I.s +
-                d.m * p.m * I.m - c.s * V.s
+            dV.s = -beta.s * (T.s + E.s) * V.s + (1 - d.s) * p.s * (I.s + I.ss) +
+                d.m * p.m * (I.m + I.mm) - c.s * V.s
             dT.s = -beta.s * T.s * V.s + mu.s * (T0.s - T.s)
             if (epsilon.s == 0) {
-                dE.s = 0
+                dE.s = -mu.s * E.s
                 dI.s = beta.s * V.s * T.s - mui.s * I.s
             } else {
-                dE.s = beta.s * V.s * T.s - E.s / epsilon.s - mu.s * E.s
+                dE.s = beta.s * V.s * (T.s - E.s) - E.s / epsilon.s - mu.s * E.s
                 dI.s = E.s / epsilon.s - mui.s * I.s
+                dE.ss = beta.s * V.s * E.s - E.ss / epsilon.s - mu.s * E.ss
+                dI.ss = E.ss / epsilon.s - mui.s * I.ss
             }
             list(c(dV.b,
-                   dV.m, dT.m, dE.m, dI.m,
-                   dV.s, dT.s, dE.s, dI.s))
+                   dV.m, dT.m, dE.m, dE.mm, dI.m, dI.mm,
+                   dV.s, dT.s, dE.s, dE.ss, dI.s, dI.ss))
         })
     }
     out <- as.data.frame(ode(state,t,wv.BTV.odes,parameters))
@@ -50,18 +54,18 @@ calc.V <- function(state,parms,times) {
 
     ## 2. constrained to midgut p.mib(1 - p.meb*p.db)
     state.2 <- state.1
-    state.2["T.m"] <- parms["T0.m"]
+    state.2["T.m"] <- parms[["T0.m"]]
     parms.2 <- parms
-    parms.2["d.m"] <- 0 ## Could also do this with T0
+    ##parms.2["d.m"] <- 0 ## Could also do this with T0
     parms.2["T0.s"] <- 0
-    dat.2 = wv.BTV.barrier.det(times,state.2,parms)
+    dat.2 = wv.BTV.barrier.det(times,state.2,parms.2)
     V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
     
     ## 3. disseminated infection p.mib*p.meb*p.db (written assuming p.sgib=1)
     ## May need to tune the parameters to get the dissemination barrier, 
     ## as it's a consequence of number of fat body cells productive and local viral clearance
     state.3 <- state.2
-    state.3["T.s"] <- parms["T0.s"]
+    state.3["T.s"] <- parms[["T0.s"]]
     parms.3 <- parms
     dat.3 = wv.BTV.barrier.det(times,state.3,parms.3)
     V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
@@ -78,7 +82,7 @@ calc.V.it <- function(state,parms,times) {
     state.it <- state
     state.it["V.b"] <- 0
     state.it["V.s"] <- initial.titre.it
-    state.it["T.s"] <- parms["T0.s"]
+    state.it["T.s"] <- parms[["T0.s"]]
 
     dat.it = wv.BTV.barrier.det(times,state.it,parms)
     V.tot.it <- rowSums(dat.it[,grepl("V.",names(dat.it))])
@@ -86,19 +90,20 @@ calc.V.it <- function(state,parms,times) {
 }
 
 ## stochastic models
-wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
+wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs, pass.mib=NA, pass.db=NA){
 
-    ## ## Calculate available target cells - commenting out, as would make more sense to do this outside of function or in wrapper function
-    ## state[["T.m"]] <- rbinom(1, state[["N.m"]],
-    ##                          1-(1-barrier.probs[["p.mib"]])^(1/state[["N.m"]]))
-    ## state[["T.l"]] <- ifelse(runif(1) < barrier.probs[["p.meb"]],state[["N.l"]],0)
-    ## parms[["d.d"]] <- ifelse(runif(1) < barrier.probs[["p.db"]],parms[["d.d"]],0)
-    ## state[["T.s"]] <- rbinom(1, state[["N.s"]],
-    ##                          1-(1-barrier.probs[["p.sgib"]])^(1/state[["N.s"]]))
-
+    ## Calculate available target cells - would make more sense to do this outside of function or in wrapper function?
+    if(is.na(pass.mib)) pass.mib <- (runif(1) < barrier.probs[["p.mib"]])
+    if(is.na(pass.db)) pass.db <- (runif(1) < barrier.probs[["p.db"]])
+    parameters[["T0.m"]] <- ifelse(pass.mib,parameters[["T0.m"]],0)
+    state[["T.m"]] <- floor(parameters[["T0.m"]] + 0.5)
+    parameters[["T0.s"]] <- ifelse(pass.db,parameters[["T0.s"]],0)
+    state[["T.s"]] <- floor(parameters[["T0.s"]] + 0.5)
+    ##parameters[["d.m"]] <- ifelse(pass.db,parameters[["d.m"]],0)
+    
     ## Transitions matrix
-    epsilon.m <- parms["epsilon.m"]
-    epsilon.s <- parms["epsilon.s"]
+    epsilon.m <- parameters[["epsilon.m"]]
+    epsilon.s <- parameters[["epsilon.s"]]
     wv.BTV.transitions <- list(
         c(V.b=-1), 
         c(T.m=-1,V.b=-1,E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,1,0)),
@@ -106,16 +111,18 @@ wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
         c(V.m=1), 
         c(V.m=-1), 
         c(T.m=-1,V.m=-1,E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,1,0)),
-        c(E.m=ifelse(epsilon.m==0,0,1),I.m=ifelse(epsilon.m==0,0,1)),
+        c(E.m=ifelse(epsilon.m==0,0,-1),I.m=ifelse(epsilon.m==0,0,1)),
         c(T.m=1),
+        c(T.m=-1),
         c(E.m=-1),
         c(I.m=-1),
         
         c(V.s=1), 
         c(V.s=-1), 
         c(T.s=-1,V.s=-1,E.s=ifelse(epsilon.s==0,0,1),I.s=ifelse(epsilon.s==0,1,0)),
-        c(E.s=ifelse(epsilon.s==0,0,1),I.s=ifelse(epsilon.s==0,0,1)),
+        c(E.s=ifelse(epsilon.s==0,0,-1),I.s=ifelse(epsilon.s==0,0,1)),
         c(T.s=1),
+        c(T.s=-1),
         c(E.s=-1),
         c(I.s=-1)
     )
@@ -130,7 +137,8 @@ wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
                      c.m * V.m,
                      beta.m * V.m * T.m,
                      ifelse(epsilon.m==0,0,E.m / epsilon.m),
-                     (T0.m - T.m) * mu.m,
+                     T0.m * mu.m,
+                     T.m * mu.m,
                      E.m * mu.m,
                      I.m * mui.m,
 
@@ -138,7 +146,8 @@ wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
                      c.s * V.s,
                      beta.s * T.s * V.s,
                      ifelse(epsilon.s==0,0,E.s / epsilon.s),
-                     (T0.s - T.s) * mu.s,
+                     T0.s * mu.s,
+                     T.s * mu.s,
                      E.s * mu.s,
                      I.s * mui.s
                      ))
@@ -154,143 +163,600 @@ wv.BTV.barrier.stoch <- function(t, state, parameters, barrier.probs){
     return(as.data.frame(out))
 }
 
+wv.BTV.coinfection.reassort <- function(t, state, parameters, withlike=0) {
+    wv.BTV.coinfection.reassort.odes <- function(t, state, parameters, withlike=0)
+    {
+        with(as.list(c(state, parameters)),{
+            ## Bloodmeal virus
+            dV.ba = -beta.b * V.ba * (T.m + E.ma + E.mb + E.mr) - c.b * V.ba
+            dV.bb = -beta.b * V.bb * (T.m + E.ma + E.mb + E.mr) - c.b * V.bb
+            dV.br = -beta.b * V.br * (T.m + E.ma + E.mb + E.mr) - c.b * V.br
+            
+            ## Midgut virus
+            dV.ma = (-beta.m * V.ma * (T.m + E.ma + E.mb + E.mr) + d.s * p.s * (I.sa + I.saa) +
+                     (1 - d.m) * p.m * (I.ma + I.maa) - c.m * V.ma +
+                     rho.1(withlike) * (d.s * p.s * (I.sar + I.sab) +
+                                        (1 - d.m) * p.m * (I.mar + I.mab)))
+            dV.mb = (-beta.m * V.mb * (T.m + E.ma + E.mb + E.mr) + d.s * p.s * (I.sb + I.sbb) +
+                     (1 - d.m) * p.m * (I.mb + I.mbb) - c.m * V.mb +
+                     rho.1(withlike) * (d.s * p.s * (I.sbr + I.sab) +
+                                        (1 - d.m) * p.m * (I.mbr + I.mab)))
+            dV.mr = (-beta.m * V.mr * (T.m + E.ma + E.mb + E.mr) + d.s * p.s * (I.sr + I.srr) + 
+                     (1 - d.m) * p.m * (I.mr + I.mrr) - c.m * V.mr +
+                     rho.1(withlike) * (d.s * p.s * (I.sar + I.sbr) +
+                                        (1 - d.m) * p.m * (I.mar + I.mbr)) +
+                     rho.r(withlike) * (d.s * p.s * (I.sar + I.sbr + I.sab) +
+                                        (1 - d.m) * p.m * (I.mar + I.mbr + I.mab)))
+            
+            ## Midgut cells
+            dT.m = -(beta.b * (V.ba + V.bb + V.br) +
+                     beta.m * (V.ma + V.mb + V.mr)) * T.m + mu.m * (T0.m - T.m)
+            
+            dE.ma = (beta.b * V.ba + beta.m * V.ma) * T.m - (beta.b * V.bb + beta.m * V.mb) * E.ma -
+                (beta.b * V.br + beta.m * V.mr) * E.ma - (beta.b * V.ba + beta.m * V.ma) * E.ma -
+                E.ma / epsilon.m - mu.m * E.ma
+            dE.mb = (beta.b * V.bb + beta.m * V.mb) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mb -
+                (beta.b * V.br + beta.m * V.mr) * E.mb - (beta.b * V.bb + beta.m * V.mb) * E.mb -
+                E.mb / epsilon.m - mu.m * E.mb
+            dE.mr = (beta.b * V.br + beta.m * V.mr) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mr -
+                (beta.b * V.bb + beta.m * V.mb) * E.mr - (beta.b * V.br + beta.m * V.mr) * E.mr -
+                E.mr / epsilon.m - mu.m * E.mr
+            dE.maa = (beta.b * V.ba + beta.m * V.ma) * E.ma - E.maa / epsilon.m - mu.m * E.maa
+            dE.mbb = (beta.b * V.bb + beta.m * V.mb) * E.mb - E.mbb / epsilon.m - mu.m * E.mbb
+            dE.mrr = (beta.b * V.br + beta.m * V.mr) * E.mr - E.mrr / epsilon.m - mu.m * E.mrr
+            dE.mab = (beta.b * V.ba + beta.m * V.ma) * E.mb +
+                (beta.b * V.bb + beta.m * V.mb) * E.ma - E.mab / epsilon.m - mu.m * E.mab
+            dE.mar = (beta.b * V.ba + beta.m * V.ma) * E.mr +
+                (beta.b * V.br + beta.m * V.mr) * E.ma - E.mar / epsilon.m - mu.m * E.mar
+            dE.mbr = (beta.b * V.bb + beta.m * V.mb) * E.mr +
+                (beta.b * V.br + beta.m * V.mr) * E.mb - E.mbr / epsilon.m - mu.m * E.mbr
 
-wv.BTV.coinfection.reassort = function(t, state, parameters, prod.fn.a=production.fn.a,
-                                       prod.fn.b=production.fn.b, prod.fn.r=production.fn.r)
-{
-    with(as.list(c(state, parameters)),{
-        ## Stuff to adapt:
-        
-        dT.m = -(beta.b * V.b + beta.m * V.m) * T.m 
-        dE.m1 = (beta.b * V.b + beta.m * V.m) * T.m - 2 * E.m1 / epsilon.m
-        dE.m2 = 2 * (E.m1 - E.m2) / epsilon.m 
-        dI.m = 2 * E.m2 / epsilon.m
-        dV.l = d.m * p.m * I.m + (1 - d.l) * p.l * I.l - c.l * V.l
-        dT.l = -beta.l * T.l * V.l 
-        dE.l1 = beta.l * T.l * V.l  - 2 * E.l1 / epsilon.l
-        dE.l2 = 2 * (E.l1 - E.l2) / epsilon.l 
-        dI.l = 2 * E.l2 / epsilon.l
-        dV.d = d.l * p.l * I.l + (1 - d.d) * p.d * I.d - c.d * V.d
-        dT.d = -beta.d * T.d * V.d 
-        dE.d1 = beta.d * T.d * V.d - 2 * E.d1 / epsilon.d
-        dE.d2 = 2 * (E.d1 - E.d2) / epsilon.d
-        dI.d = 2 * E.d2 / epsilon.d
-        dV.s = d.d * p.d * I.d + p.s * I.s - c.s * V.s
-        dT.s = -beta.s * T.s * V.s 
-        dE.s1 = beta.s * T.s * V.s - 2 * E.s1 / epsilon.s
-        dE.s2 = 2 * (E.s1 - E.s2) / epsilon.s
-        dI.s = 2 * E.s2 / epsilon.s
+            dI.ma = E.ma / epsilon.m - mui.m * I.ma
+            dI.mb = E.mb / epsilon.m - mui.m * I.mb
+            dI.mr = E.mr / epsilon.m - mui.m * I.mr
+            dI.maa = E.maa / epsilon.m - mui.m * I.maa
+            dI.mbb = E.mbb / epsilon.m - mui.m * I.mbb
+            dI.mrr = E.mrr / epsilon.m - mui.m * I.mrr
+            dI.mab = E.mab / epsilon.m - mui.m * I.mab
+            dI.mar = E.mar / epsilon.m - mui.m * I.mar
+            dI.mbr = E.mbr / epsilon.m - mui.m * I.mbr
+            
+            ## Secondary tissue virus
+            dV.sa = (-beta.s * V.sa * (T.s + E.sa + E.sb + E.sr) + d.m * p.m * (I.ma + I.maa) +
+                (1 - d.s) * p.s * (I.sa + I.saa) - c.s * V.sa +
+                rho.1(withlike) * (d.m * p.m * (I.mar + I.mab) + (1 - d.s) * p.s * (I.sar + I.sab)))
+            dV.sb = (-beta.s * V.sb * (T.s + E.sa + E.sb + E.sr) + d.m * p.m * (I.mb + I.mbb) +
+                (1 - d.s) * p.s * (I.sb + I.sbb) - c.s * V.sb +
+                rho.1(withlike) * (d.m * p.m * (I.mbr + I.mab) + (1 - d.s) * p.s * (I.sbr + I.sab)))
+            dV.sr = (-beta.s * V.sr * (T.s + E.sa + E.sb + E.sr) + d.m * p.m * (I.mr + I.mrr) +
+                (1 - d.s) * p.s * (I.sr + I.srr) - c.s * V.sr +
+                rho.1(withlike) * (d.m * p.m * (I.mar + I.mbr) + (1 - d.s) * p.s * (I.sar + I.sbr)) +
+                rho.r(withlike) * (d.m * p.m * (I.mar + I.mbr + I.mab) +
+                                   (1 - d.s) * p.s * (I.sar + I.sbr + I.sab)))
+            
+            ## Secondary tissue cells
+            dT.s = -beta.s * (V.sa + V.sb + V.sr) * T.s + mu.s * (T0.s - T.s)
 
-        ## Bloodmeal virus
-        dV.ba = -c.m * V.ba
-        dV.bb = -c.m * V.bb
-        dV.br = -c.m * V.br
-        ## Midgut virus START HERE
-        dV.ma = (1 - d.m) * p.m * I.m - c.m * V.m
-        dV.mb = 
-        dV.mr =
-        ## Midgut cells
-        dT.m = -beta.m * T.m * (V.ma + V.mb)
-        dI.ma0 = beta.m * T.m * V.ma - I.ma0 * (n / epsilon + beta.m * V.mb)
-        dI.mb0 = beta.m * T.m * V.mb - I.mb0 * (n / epsilon + beta.m * V.ma)
-        dI.man = n * get(paste0("I.ma",n-1)) / epsilon
-        dI.mbn = n * get(paste0("I.mb",n-1)) / epsilon
-        dI.ma <- vector(mode="numeric",length=n-1)
-        dI.mb <- vector(mode="numeric",length=n-1)
-        dI.mabj0 = vector(mode="numeric",length=n-1)
-        dI.mab0k = vector(mode="numeric",length=n-1)
-        dI.mabjn = vector(mode="numeric",length=n-1)
-        dI.mabnk = vector(mode="numeric",length=n-1)
-        ## Secondary tissue virus
-        sumV.ma.vec <- vector(mode="numeric",length=n-1)
-        sumV.mb.vec <- vector(mode="numeric",length=n-1)
-        sumV.mr.vec <- vector(mode="numeric",length=n-1)
-        ## Secondary tissue cells
-        dT.s = -beta.s * T.s * (V.sa + V.sb + V.sr)
-        dI.sa0 = beta.s * T.s * V.sa - I.sa0 * (1 / epsilon + beta.s * (V.sb + V.sr))
-        dI.sb0 = beta.s * T.s * V.sb - I.sb0 * (1 / epsilon + beta.s * (V.sa + V.sr))
-        dI.sr0 = beta.s * T.s * V.sr - I.sr0 * (1 / epsilon + beta.s * (V.sa + V.sb))
-        dI.san = I.sa0 / epsilon
-        dI.sbn = I.sb0 / epsilon
-        dI.srn = I.sr0 / epsilon
-        dI.sab00 <- beta.s * (V.sa * I.sb0 + V.sb * I.sa0) - I.sab00/epsilon
-        dI.sar00 <- beta.s * (V.sa * I.sr0 + V.sr * I.sa0) - I.sar00/epsilon
-        dI.sbr00 <- beta.s * (V.sr * I.sb0 + V.sb * I.sr0) - I.sbr00/epsilon
-        dI.sabnn <- I.sab00/epsilon
-        dI.sarnn <- I.sar00/epsilon
-        dI.sbrnn <- I.sbr00/epsilon
-        if (n>1) {
-            for (ii in 1:(n-1)) {
-                ## Midgut cells
-                diffval.a <- get(paste0("I.ma",ii-1)) - get(paste0("I.ma",ii))
-                diffval.b <- get(paste0("I.mb",ii-1)) - get(paste0("I.mb",ii))
-                dI.ma[ii] <- n * diffval.a / epsilon - beta.m * V.mb * get(paste0("I.ma",ii))
-                dI.mb[ii] <- n * diffval.b / epsilon - beta.m * V.ma * get(paste0("I.mb",ii))
-                dI.mabj0[ii] <- beta.m * V.mb * get(paste0("I.ma",ii)) - n * get(paste0("I.mab",ii,"0")) / epsilon
-                dI.mab0k[ii] <- beta.m * V.ma * get(paste0("I.mb",ii)) - n * get(paste0("I.mab0",ii)) / epsilon
-                dI.mabjn[ii] <- n * get(paste0("I.mab",ii-1,n-1)) / epsilon
-                dI.mabnk[ii] <- n * get(paste0("I.mab",n-1,ii-1)) / epsilon
-                ## Secondary tissue virus
-                sumV.ma.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.a(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.a(n,ii,n)
-                sumV.mb.vec[ii] <- get(paste0("I.mab",ii,"n")) * prod.fn.b(ii,n,n) + get(paste0("I.mabn",ii)) * prod.fn.b(n,ii,n)
-                sumV.mr.vec[ii] <- (get(paste0("I.mab",ii,"n")) + get(paste0("I.mabn",ii))) * prod.fn.r(ii,n,n)
-            }
-        }
-        ## Midgut cells
-        dI.mabjk = array(dim = c(n-1,n-1))
-        if (n>1){
-            for (jj in 1:(n-1)) {
-                for (kk in 1:(n-1)) {
-                    ## Midgut cells
-                    diffval <- get(paste0("I.mab",jj-1,kk-1)) - get(paste0("I.mab",jj,kk))
-                    dI.mabjk[jj,kk] <- n * diffval / epsilon
-                }
-            }
-        }
-        ## Midgut cells
-        dI.mab00 <- beta.m * (V.ma * I.mb0 + V.mb * I.ma0) - n * I.mab00 / epsilon
-        dI.mabnn <- n * get(paste0("I.mab",n-1,n-1)) / epsilon                
-        ## Secondary tissue virus
-        sumV.ma <- sum(sumV.ma.vec)
-        sumV.mb <- sum(sumV.mb.vec)
-        sumV.mr <- sum(sumV.mr.vec)
-        ## Next three lines need editting to account for n=1
-        if (n>1) {
-            dV.sa = p.m * (I.man + sumV.ma + I.mabnn * prod.fn.a(n,n,n)) + k * p.s * (I.san + (I.sabnn + I.sarnn) * prod.fn.a(1,1,1)) - c.s * V.sa
-            dV.sb = p.m * (I.mbn + sumV.mb + I.mabnn * prod.fn.b(n,n,n)) + k * p.s * (I.sbn + I.sabnn * prod.fn.b(1,1,1) + I.sbrnn * prod.fn.a(1,1,1)) - c.s * V.sb
-            dV.sr = p.m * (sumV.mr + I.mabnn * prod.fn.r(n,n,n)) +
-                k * p.s * ((I.sabnn + I.sarnn + I.sbrnn) * prod.fn.r(1,1,1) + I.srn +
-                          (I.sarnn + I.sbrnn) * prod.fn.b(1,1,1))  - c.s * V.sr
-        } else {
-            dV.sa = p.m * (I.man + I.mabnn * prod.fn.a(n,n,n)) + k * p.s * (I.san + (I.sabnn + I.sarnn) * prod.fn.a(1,1,1)) - c.s * V.sa
-            dV.sb = p.m * (I.mbn + I.mabnn * prod.fn.b(n,n,n)) + k * p.s * (I.sbn + I.sabnn * prod.fn.b(1,1,1) + I.sbrnn * prod.fn.a(1,1,1)) - c.s * V.sb
-            dV.sr = p.m * I.mabnn * prod.fn.r(n,n,n) +
-                k * p.s * ((I.sabnn + I.sarnn + I.sbrnn) * prod.fn.r(1,1,1) + I.srn +
-                          (I.sarnn + I.sbrnn) * prod.fn.b(1,1,1))  - c.s * V.sr
-        }
-        list(c(dV.ma, dV.mb,
-               dT.m,
-               dI.ma0, dI.ma, dI.man,
-               dI.mb0, dI.mb, dI.mbn,
-               dI.mab00, dI.mabj0, dI.mab0k,
-               as.numeric(dI.mabjk),
-               dI.mabnk, dI.mabjn, dI.mabnn,
-               dV.sa, dV.sb, dV.sr,
-               dT.s,
-               dI.sa0, dI.san,
-               dI.sb0, dI.sbn,
-               dI.sr0, dI.srn,
-               dI.sab00,
-               dI.sar00,
-               dI.sbr00,
-               dI.sabnn,
-               dI.sarnn,
-               dI.sbrnn))
-    })
+            dE.sa = beta.s * V.sa * T.s - beta.s * V.sb * E.sa - beta.s * V.sr * E.sa -
+                beta.s * V.sa * E.sa - E.sa / epsilon.s - mu.s * E.sa
+            dE.sb = beta.s * V.sb * T.s - beta.s * V.sa * E.sb - beta.s * V.sr * E.sb -
+                beta.s * V.sb * E.sb - E.sb / epsilon.s - mu.s * E.sb
+            dE.sr = beta.s * V.sr * T.s - beta.s * V.sa * E.sr - beta.s * V.sb * E.sr -
+                beta.s * V.sr * E.sr - E.sr / epsilon.s - mu.s * E.sr
+            dE.saa = beta.s * V.sa * E.sa - E.saa / epsilon.s - mu.s * E.saa
+            dE.sbb = beta.s * V.sb * E.sb - E.sbb / epsilon.s - mu.s * E.sbb
+            dE.srr = beta.s * V.sr * E.sr - E.srr / epsilon.s - mu.s * E.srr
+            dE.sab = beta.s * V.sa * E.sb + beta.s * V.sb * E.sa - E.sab / epsilon.s - mu.s * E.sab
+            dE.sar = beta.s * V.sa * E.sr + beta.s * V.sr * E.sa - E.sar / epsilon.s - mu.s * E.sar
+            dE.sbr = beta.s * V.sb * E.sr + beta.s * V.sr * E.sb - E.sbr / epsilon.s - mu.s * E.sbr
+            
+            dI.sa = E.sa / epsilon.s - mui.s * I.sa
+            dI.sb = E.sb / epsilon.s - mui.s * I.sb
+            dI.sr = E.sr / epsilon.s - mui.s * I.sr
+            dI.saa = E.saa / epsilon.s - mui.s * I.saa
+            dI.sbb = E.sbb / epsilon.s - mui.s * I.sbb
+            dI.srr = E.srr / epsilon.s - mui.s * I.srr
+            dI.sab = E.sab / epsilon.s - mui.s * I.sab
+            dI.sar = E.sar / epsilon.s - mui.s * I.sar
+            dI.sbr = E.sbr / epsilon.s - mui.s * I.sbr
+            
+            list(c(dV.ba, dV.bb, dV.br,
+                   dV.ma, dV.mb, dV.mr,
+                   dT.m,
+                   dE.ma,dE.mb,dE.mr,dE.maa,dE.mbb,dE.mrr,dE.mab,dE.mar,dE.mbr,
+                   dI.ma,dI.mb,dI.mr,dI.maa,dI.mbb,dI.mrr,dI.mab,dI.mar,dI.mbr,
+                   dV.sa, dV.sb, dV.sr,
+                   dT.s,
+                   dE.sa,dE.sb,dE.sr,dE.saa,dE.sbb,dE.srr,dE.sab,dE.sar,dE.sbr,
+                   dI.sa,dI.sb,dI.sr,dI.saa,dI.sbb,dI.srr,dI.sab,dI.sar,dI.sbr
+                   ))
+        })
+    }
+    out <- as.data.frame(ode(state,t,wv.BTV.coinfection.reassort.odes,parameters,
+                             withlike=withlike))
+    return(out)
 }
 
+rho.1 <- function(omega) {
+    return(omega / 2 + (1 - omega) / 2 ^ 10)
+}
+rho.r <- function(omega) {
+    return((1 - omega) * (1 - 1 / 2 ^ 9))
+}
 
-tuncer.wv = function(t, state, parameters) # https://www.tandfonline.com/doi/full/10.1080/17513758.2021.1970261
+## As before, except allowing differing production rates between the viruses
+wv.BTV.coinfection.reassort.variable <- function(t, state, parameters, withlike=0) {
+    wv.BTV.coinfection.reassort.odes <- function(t, state, parameters, withlike=0)
+    {
+        with(as.list(c(state, parameters)),{
+            ## Bloodmeal virus
+            dV.ba = -beta.b * V.ba * (T.m + E.ma + E.mb + E.mr) - c.b * V.ba
+            dV.bb = -beta.b * V.bb * (T.m + E.ma + E.mb + E.mr) - c.b * V.bb
+            dV.br = -beta.b * V.br * (T.m + E.ma + E.mb + E.mr) - c.b * V.br
+            
+            ## Midgut virus
+            dV.ma = (-beta.m * V.ma * (T.m + E.ma + E.mb + E.mr) + d.s * p.sa * (I.sa + I.saa) +
+                     (1 - d.m) * p.ma * (I.ma + I.maa) - c.m * V.ma +
+                     rho.1(withlike) * (d.s * p.sa * (I.sar + I.sab) +
+                                        (1 - d.m) * p.ma * (I.mar + I.mab)))
+            dV.mb = (-beta.m * V.mb * (T.m + E.ma + E.mb + E.mr) + d.s * p.sb* (I.sb + I.sbb) +
+                     (1 - d.m) * p.mb * (I.mb + I.mbb) - c.m * V.mb +
+                     rho.1(withlike) * (d.s * p.sb * (I.sbr + I.sab) +
+                                        (1 - d.m) * p.mb * (I.mbr + I.mab)))
+            dV.mr = (-beta.m * V.mr * (T.m + E.ma + E.mb + E.mr) + d.s * p.sr * (I.sr + I.srr) + 
+                     (1 - d.m) * p.mr * (I.mr + I.mrr) - c.m * V.mr +
+                     rho.1(withlike) * (d.s * p.sr * (I.sar + I.sbr) +
+                                        (1 - d.m) * p.mr * (I.mar + I.mbr)) +
+                     rho.r(withlike) * (d.s * p.sr * (I.sar + I.sbr + I.sab) +
+                                        (1 - d.m) * p.mr * (I.mar + I.mbr + I.mab)))
+            
+            ## Midgut cells
+            dT.m = -(beta.b * (V.ba + V.bb + V.br) +
+                     beta.m * (V.ma + V.mb + V.mr)) * T.m + mu.m * (T0.m - T.m)
+            
+            dE.ma = (beta.b * V.ba + beta.m * V.ma) * T.m - (beta.b * V.bb + beta.m * V.mb) * E.ma -
+                (beta.b * V.br + beta.m * V.mr) * E.ma - (beta.b * V.ba + beta.m * V.ma) * E.ma -
+                E.ma / epsilon.m - mu.m * E.ma
+            dE.mb = (beta.b * V.bb + beta.m * V.mb) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mb -
+                (beta.b * V.br + beta.m * V.mr) * E.mb - (beta.b * V.bb + beta.m * V.mb) * E.mb -
+                E.mb / epsilon.m - mu.m * E.mb
+            dE.mr = (beta.b * V.br + beta.m * V.mr) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mr -
+                (beta.b * V.bb + beta.m * V.mb) * E.mr - (beta.b * V.br + beta.m * V.mr) * E.mr -
+                E.mr / epsilon.m - mu.m * E.mr
+            dE.maa = (beta.b * V.ba + beta.m * V.ma) * E.ma - E.maa / epsilon.m - mu.m * E.maa
+            dE.mbb = (beta.b * V.bb + beta.m * V.mb) * E.mb - E.mbb / epsilon.m - mu.m * E.mbb
+            dE.mrr = (beta.b * V.br + beta.m * V.mr) * E.mr - E.mrr / epsilon.m - mu.m * E.mrr
+            dE.mab = (beta.b * V.ba + beta.m * V.ma) * E.mb +
+                (beta.b * V.bb + beta.m * V.mb) * E.ma - E.mab / epsilon.m - mu.m * E.mab
+            dE.mar = (beta.b * V.ba + beta.m * V.ma) * E.mr +
+                (beta.b * V.br + beta.m * V.mr) * E.ma - E.mar / epsilon.m - mu.m * E.mar
+            dE.mbr = (beta.b * V.bb + beta.m * V.mb) * E.mr +
+                (beta.b * V.br + beta.m * V.mr) * E.mb - E.mbr / epsilon.m - mu.m * E.mbr
+
+            dI.ma = E.ma / epsilon.m - mui.m * I.ma
+            dI.mb = E.mb / epsilon.m - mui.m * I.mb
+            dI.mr = E.mr / epsilon.m - mui.m * I.mr
+            dI.maa = E.maa / epsilon.m - mui.m * I.maa
+            dI.mbb = E.mbb / epsilon.m - mui.m * I.mbb
+            dI.mrr = E.mrr / epsilon.m - mui.m * I.mrr
+            dI.mab = E.mab / epsilon.m - mui.m * I.mab
+            dI.mar = E.mar / epsilon.m - mui.m * I.mar
+            dI.mbr = E.mbr / epsilon.m - mui.m * I.mbr
+            
+            ## Secondary tissue virus
+            dV.sa = (-beta.s * V.sa * (T.s + E.sa + E.sb + E.sr) + d.m * p.ma * (I.ma + I.maa) +
+                (1 - d.s) * p.sa * (I.sa + I.saa) - c.s * V.sa +
+                rho.1(withlike) * (d.m * p.ma * (I.mar + I.mab) + (1 - d.s) * p.sa * (I.sar + I.sab)))
+            dV.sb = (-beta.s * V.sb * (T.s + E.sa + E.sb + E.sr) + d.m * p.mb * (I.mb + I.mbb) +
+                (1 - d.s) * p.sb * (I.sb + I.sbb) - c.s * V.sb +
+                rho.1(withlike) * (d.m * p.mb * (I.mbr + I.mab) + (1 - d.s) * p.sb * (I.sbr + I.sab)))
+            dV.sr = (-beta.s * V.sr * (T.s + E.sa + E.sb + E.sr) + d.m * p.mr * (I.mr + I.mrr) +
+                (1 - d.s) * p.sr * (I.sr + I.srr) - c.s * V.sr +
+                rho.1(withlike) * (d.m * p.mr * (I.mar + I.mbr) + (1 - d.s) * p.sr * (I.sar + I.sbr)) +
+                rho.r(withlike) * (d.m * p.mr * (I.mar + I.mbr + I.mab) +
+                                   (1 - d.s) * p.sr * (I.sar + I.sbr + I.sab)))
+            
+            ## Secondary tissue cells
+            dT.s = -beta.s * (V.sa + V.sb + V.sr) * T.s + mu.s * (T0.s - T.s)
+
+            dE.sa = beta.s * V.sa * T.s - beta.s * V.sb * E.sa - beta.s * V.sr * E.sa -
+                beta.s * V.sa * E.sa - E.sa / epsilon.s - mu.s * E.sa
+            dE.sb = beta.s * V.sb * T.s - beta.s * V.sa * E.sb - beta.s * V.sr * E.sb -
+                beta.s * V.sb * E.sb - E.sb / epsilon.s - mu.s * E.sb
+            dE.sr = beta.s * V.sr * T.s - beta.s * V.sa * E.sr - beta.s * V.sb * E.sr -
+                beta.s * V.sr * E.sr - E.sr / epsilon.s - mu.s * E.sr
+            dE.saa = beta.s * V.sa * E.sa - E.saa / epsilon.s - mu.s * E.saa
+            dE.sbb = beta.s * V.sb * E.sb - E.sbb / epsilon.s - mu.s * E.sbb
+            dE.srr = beta.s * V.sr * E.sr - E.srr / epsilon.s - mu.s * E.srr
+            dE.sab = beta.s * V.sa * E.sb + beta.s * V.sb * E.sa - E.sab / epsilon.s - mu.s * E.sab
+            dE.sar = beta.s * V.sa * E.sr + beta.s * V.sr * E.sa - E.sar / epsilon.s - mu.s * E.sar
+            dE.sbr = beta.s * V.sb * E.sr + beta.s * V.sr * E.sb - E.sbr / epsilon.s - mu.s * E.sbr
+            
+            dI.sa = E.sa / epsilon.s - mui.s * I.sa
+            dI.sb = E.sb / epsilon.s - mui.s * I.sb
+            dI.sr = E.sr / epsilon.s - mui.s * I.sr
+            dI.saa = E.saa / epsilon.s - mui.s * I.saa
+            dI.sbb = E.sbb / epsilon.s - mui.s * I.sbb
+            dI.srr = E.srr / epsilon.s - mui.s * I.srr
+            dI.sab = E.sab / epsilon.s - mui.s * I.sab
+            dI.sar = E.sar / epsilon.s - mui.s * I.sar
+            dI.sbr = E.sbr / epsilon.s - mui.s * I.sbr
+            
+            list(c(dV.ba, dV.bb, dV.br,
+                   dV.ma, dV.mb, dV.mr,
+                   dT.m,
+                   dE.ma,dE.mb,dE.mr,dE.maa,dE.mbb,dE.mrr,dE.mab,dE.mar,dE.mbr,
+                   dI.ma,dI.mb,dI.mr,dI.maa,dI.mbb,dI.mrr,dI.mab,dI.mar,dI.mbr,
+                   dV.sa, dV.sb, dV.sr,
+                   dT.s,
+                   dE.sa,dE.sb,dE.sr,dE.saa,dE.sbb,dE.srr,dE.sab,dE.sar,dE.sbr,
+                   dI.sa,dI.sb,dI.sr,dI.saa,dI.sbb,dI.srr,dI.sab,dI.sar,dI.sbr
+                   ))
+        })
+    }
+    out <- as.data.frame(ode(state,t,wv.BTV.coinfection.reassort.odes,parameters,
+                             withlike=withlike))
+    return(out)
+}
+
+## Reduced forms of the coinfection system, mainly for checking
+## To obtain a model without reassortment, just set withlike = 1 in full model
+wv.BTV.coinfection.simple <- function(t, state, parameters) {
+    wv.BTV.coinfection.simple.odes <- function(t, state, parameters)
+    {
+        with(as.list(c(state, parameters)),{
+            ## Bloodmeal virus
+            dV.ba = -beta.b * V.ba * (T.m + E.ma + E.mb) - c.b * V.ba
+            dV.bb = -beta.b * V.bb * (T.m + E.ma + E.mb) - c.b * V.bb
+            
+            ## Produced virus
+            dV.ma = (-beta.m * V.ma * (T.m + E.mb + E.ma) +
+                     p.m * (I.ma + I.maa) - c.m * V.ma +
+                     rho.1(1) * p.m * I.mab)
+            dV.mb = (-beta.m * V.mb * (T.m + E.ma + E.mb) +
+                     p.m * (I.mb + I.mbb) - c.m * V.mb +
+                     rho.1(1) * p.m * I.mab)
+            
+            ## Cells
+            dT.m = -(beta.b * (V.ba + V.bb) +
+                     beta.m * (V.ma + V.mb)) * T.m + mu.m * (T0.m - T.m)
+            
+            dE.ma = (beta.b * V.ba + beta.m * V.ma) * T.m - (beta.b * V.bb + beta.m * V.mb) * E.ma -
+                (beta.b * V.ba + beta.m * V.ma) * E.ma - E.ma / epsilon.m - mu.m * E.ma
+            dE.mb = (beta.b * V.bb + beta.m * V.mb) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mb -
+                (beta.b * V.bb + beta.m * V.mb) * E.mb - E.mb / epsilon.m - mu.m * E.mb
+            dE.maa = (beta.b * V.ba + beta.m * V.ma) * E.ma - E.maa / epsilon.m - mu.m * E.maa
+            dE.mbb = (beta.b * V.bb + beta.m * V.mb) * E.mb - E.mbb / epsilon.m - mu.m * E.mbb
+            dE.mab = (beta.b * V.ba + beta.m * V.ma) * E.mb +
+                (beta.b * V.bb + beta.m * V.mb) * E.ma - E.mab / epsilon.m - mu.m * E.mab
+
+            dI.ma = E.ma / epsilon.m - mui.m * I.ma
+            dI.mb = E.mb / epsilon.m - mui.m * I.mb
+            dI.maa = E.maa / epsilon.m - mui.m * I.maa
+            dI.mbb = E.mbb / epsilon.m - mui.m * I.mbb
+            dI.mab = E.mab / epsilon.m - mui.m * I.mab
+                        
+            list(c(dV.ba, dV.bb,
+                   dV.ma, dV.mb,
+                   dT.m,
+                   dE.ma,dE.mb,dE.maa,dE.mbb,dE.mab,
+                   dI.ma,dI.mb,dI.maa,dI.mbb,dI.mab))
+        })
+    }
+    out <- as.data.frame(ode(state,t,wv.BTV.coinfection.simple.odes,parameters))
+    return(out)
+}
+
+wv.BTV.coinfection.simple.nonneutral <- function(t, state, parameters) {
+    wv.BTV.coinfection.simple.odes <- function(t, state, parameters)
+    {
+        with(as.list(c(state, parameters)),{
+            ## Bloodmeal virus
+            dV.ba = -beta.b * V.ba * (T.m + E.mb) - c.b * V.ba
+            dV.bb = -beta.b * V.bb * (T.m + E.ma) - c.b * V.bb
+            
+            ## Produced virus
+            dV.ma = (-beta.m * V.ma * (T.m + E.mb) +
+                     p.m * I.ma - c.m * V.ma +
+                     rho.1(1) * p.m * I.mab)
+            dV.mb = (-beta.m * V.mb * (T.m + E.ma) +
+                     p.m * I.mb - c.m * V.mb +
+                     rho.1(1) * p.m * I.mab)
+            
+            ## Cells
+            dT.m = -(beta.b * (V.ba + V.bb) +
+                     beta.m * (V.ma + V.mb)) * T.m + mu.m * (T0.m - T.m)
+            
+            dE.ma = (beta.b * V.ba + beta.m * V.ma) * T.m - (beta.b * V.bb + beta.m * V.mb) * E.ma -
+                E.ma / epsilon.m - mu.m * E.ma
+            dE.mb = (beta.b * V.bb + beta.m * V.mb) * T.m - (beta.b * V.ba + beta.m * V.ma) * E.mb -
+                E.mb / epsilon.m - mu.m * E.mb
+            dE.mab = (beta.b * V.ba + beta.m * V.ma) * E.mb +
+                (beta.b * V.bb + beta.m * V.mb) * E.ma - E.mab / epsilon.m - mu.m * E.mab
+
+            dI.ma = E.ma / epsilon.m - mui.m * I.ma
+            dI.mb = E.mb / epsilon.m - mui.m * I.mb
+            dI.mab = E.mab / epsilon.m - mui.m * I.mab
+                        
+            list(c(dV.ba, dV.bb,
+                   dV.ma, dV.mb,
+                   dT.m,
+                   dE.ma,dE.mb,dE.mab,
+                   dI.ma,dI.mb,dI.mab))
+
+        })
+    }
+    out <- as.data.frame(ode(state,t,wv.BTV.coinfection.simple.odes,parameters))
+    return(out)
+}
+
+## The calculation of the output in the coinfection model with reassortment
+calc.R.full <- function(state.coinf,parms,fitting.parms) {
+    ## Calculate each spacing between infections separately.
+    ## When spacing != 0, decrease the p.db by a fixed amount
+    ## Do this on a logistic scale so that it doesn't go above 1
+    ## But ensure that the probability increase only takes place subsequent to second bloodmeal
+    withlike <- fitting.parms["withlike"]
+    ##parms["epsilon.m"] <- fitting.parms["epsilon.m"]
+    ##parms["epsilon.s"] <- fitting.parms["epsilon.s"]
+    output.list <- list()
+    for (second.intro in unique(combined.runtimes$gap)){
+        runtime <- combined.runtimes[gap==second.intro,runtime]
+        if (second.intro > 0) {
+            p.db.new <- plogis(qlogis(p.db) + fitting.parms[["p.db.inc"]])
+            times.a <- seq(0,second.intro,1)
+            times.b <- seq(second.intro,runtime,1)
+            ## 1. no infection 1 - p.mib
+            state.1a <- state.coinf
+            state.1a["T.m"] <- 0
+            state.1a["T.s"] <- 0
+            state.1a["V.ba"] <- floor(initial.titre*log(2) + 0.5)
+            parms.1 <- parms
+            parms.1["T0.m"] <- 0
+            parms.1["T0.s"] <- 0
+            dat.1a = wv.BTV.coinfection.reassort(times.a,state.1a,parms.1,withlike)
+            state.1b <- pmax(as.numeric(dat.1a[nrow(dat.1a),-1]),0)
+            names(state.1b) <- names(state.1a)
+            state.1b["V.bb"] <- floor(initial.titre*log(2) + 0.5)
+            dat.1b = wv.BTV.coinfection.reassort(times.b,state.1b,parms.1,withlike)
+            dat.1 <- rbind(dat.1a,dat.1b[-1,])
+            V.tot.1 <- rowSums(dat.1[,grepl("V.",names(dat.1))])
+            R.tot.1 <- rowSums(dat.1[,c("V.br","V.mr","V.sr")])
+
+            ## 2. constrained to midgut p.mib(1 - p.db.new)
+            state.2a <- state.1a
+            state.2a["T.m"] <- parms[["T0.m"]]
+            parms.2 <- parms
+            parms.2["T0.s"] <- 0
+            dat.2a <- wv.BTV.coinfection.reassort(times.a,state.2a,parms.2,withlike)
+            state.2b <- pmax(as.numeric(dat.2a[nrow(dat.2a),-1]),0)
+            names(state.2b) <- names(state.2a)
+            state.2b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+            dat.2b <- wv.BTV.coinfection.reassort(times.b,state.2b,parms.2,withlike)
+            dat.2 <- rbind(dat.2a,dat.2b[-1,])
+            V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
+            R.tot.2 <- rowSums(dat.2[,c("V.br","V.mr","V.sr")])
+
+            ## 3. disseminated infection following second bloodmeal p.mib*(p.db.new - p.db) 
+            state.3a <- state.2a
+            parms.3a <- parms
+            parms.3a["T0.s"] <- 0
+            dat.3a <- wv.BTV.coinfection.reassort(times.a,state.3a,parms.3a,withlike)
+            state.3b <- pmax(as.numeric(dat.3a[nrow(dat.3a),-1]),0)
+            names(state.3b) <- names(state.3a)
+            state.3b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+            state.3b["T.s"] <- parms[["T0.s"]]
+            parms.3b <- parms
+            dat.3b <- wv.BTV.coinfection.reassort(times.b,state.3b,parms.3b,withlike)
+            dat.3 <- rbind(dat.3a,dat.3b[-1,])
+            V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
+            R.tot.3 <- rowSums(dat.3[,c("V.br","V.mr","V.sr")])
+
+            ## 4. disseminated infection right away p.mib*p.db 
+            state.4a <- state.3a
+            state.4a["T.s"] <- parms[["T0.s"]]
+            parms.4 <- parms
+            dat.4a <- wv.BTV.coinfection.reassort(times.a,state.4a,parms.4,withlike)
+            state.4b <- pmax(as.numeric(dat.4a[nrow(dat.4a),-1]),0)
+            names(state.4b) <- names(state.4a)
+            state.4b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+            dat.4b <- wv.BTV.coinfection.reassort(times.b,state.4b,parms.4,withlike)
+            dat.4 <- rbind(dat.4a,dat.4b[-1,])
+            V.tot.4 <- rowSums(dat.4[,grepl("V.",names(dat.4))])
+            R.tot.4 <- rowSums(dat.4[,c("V.br","V.mr","V.sr")])
+
+            ## Get weighted sum
+            V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.db.new) +
+                V.tot.3*p.mib*(p.db.new-p.db) + V.tot.4*p.mib*p.db
+            V.tot.pos <- V.tot.2*(1-p.db.new) + V.tot.3*(p.db.new-p.db) + V.tot.4*p.db
+            R.tot <- R.tot.1*(1-p.mib) + R.tot.2*p.mib*(1-p.db.new) +
+                R.tot.3*p.mib*(p.db.new-p.db) + R.tot.4*p.mib*p.db
+            R.tot.pos <- R.tot.2*(1-p.db.new) + R.tot.3*(p.db.new-p.db) + R.tot.4*p.db
+            output.list[[as.character(second.intro)]] <- list(V.tot.1=V.tot.1,
+                                                              V.tot.2=V.tot.2,V.tot.3=V.tot.3,
+                                                              V.tot.4=V.tot.4,
+                                                              V.tot=V.tot,V.tot.pos=V.tot.pos,
+                                                              R.tot.1=R.tot.1,R.tot.2=R.tot.2,
+                                                              R.tot.3=R.tot.3,
+                                                              R.tot.4=R.tot.4,
+                                                              R.tot=R.tot,R.tot.pos=R.tot.pos)
+        } else {
+            times <- seq(0,runtime,1)
+            ## 1. no infection
+            state.1 <- state.coinf
+            state.1[["V.ba"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
+            state.1[["V.bb"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
+            state.1["T.m"] <- 0
+            state.1["T.s"] <- 0
+            parms.1 <- parms
+            parms.1["T0.m"] <- 0
+            parms.1["T0.s"] <- 0
+            dat.1 <- wv.BTV.coinfection.reassort(times,state.1,parms.1,withlike)
+            V.tot.1 <- rowSums(dat.1[,grepl("V.",names(dat.1))])
+            R.tot.1 <- rowSums(dat.1[,c("V.br","V.mr","V.sr")])
+
+            ## 2. constrained to midgut p.mib(1 - p.db)
+            state.2 <- state.1
+            state.2["T.m"] <- parms[["T0.m"]]
+            parms.2 <- parms
+            parms.2["T0.s"] <- 0
+            dat.2 <- wv.BTV.coinfection.reassort(times,state.2,parms.2,withlike)
+            V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
+            R.tot.2 <- rowSums(dat.2[,c("V.br","V.mr","V.sr")])
+
+            ## 3. disseminated infection p.mib*p.db
+            state.3 <- state.2
+            state.3["T.s"] <- parms[["T0.s"]]
+            parms.3 <- parms
+            dat.3 <- wv.BTV.coinfection.reassort(times,state.3,parms.3,withlike)
+            V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
+            R.tot.3 <- rowSums(dat.3[,c("V.br","V.mr","V.sr")])
+
+            ## Get weighted sum
+            V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.db) +
+                V.tot.3*p.mib*p.db
+            V.tot.pos <- V.tot.2*(1-p.db) + V.tot.3*p.db
+            R.tot <- R.tot.1*(1-p.mib) + R.tot.2*p.mib*(1-p.db) +
+                R.tot.3*p.mib*p.db
+            R.tot.pos <- R.tot.2*(1-p.db) + R.tot.3*p.db
+            output.list[[as.character(second.intro)]] <- list(V.tot.1=V.tot.1,V.tot.2=V.tot.2,
+                                                              V.tot.3=V.tot.3,
+                                                              V.tot=V.tot,V.tot.pos=V.tot.pos,
+                                                              R.tot.1=R.tot.1,R.tot.2=R.tot.2,
+                                                              R.tot.3=R.tot.3,
+                                                              R.tot=R.tot,R.tot.pos=R.tot.pos)
+        }
+    }
+    return(output.list)
+}
+
+calc.R.variable <- function(state.coinf,parms,fitting.parms,runtime,second.intro) {
+    ## Calculate each spacing between infections separately.
+    ## When spacing != 0, decrease the p.db by a fixed amount
+    ## Do this on a logistic scale so that it doesn't go above 1
+    ## But ensure that the probability increase only takes place subsequent to second bloodmeal
+    withlike <- fitting.parms["withlike"]
+    ##parms["epsilon.m"] <- fitting.parms["epsilon.m"]
+    ##parms["epsilon.s"] <- fitting.parms["epsilon.s"]
+    if (second.intro > 0) {
+        p.db.new <- plogis(qlogis(p.db) + fitting.parms[["p.db.inc"]])
+        times.a <- seq(0,second.intro,1)
+        times.b <- seq(second.intro,runtime,1)
+        ## 1. no infection 1 - p.mib
+        state.1a <- state.coinf
+        state.1a["T.m"] <- 0
+        state.1a["T.s"] <- 0
+        parms.1 <- parms
+        parms.1["T0.m"] <- 0
+        parms.1["T0.s"] <- 0
+        dat.1a = wv.BTV.coinfection.reassort.variable(times.a,state.1a,parms.1,withlike)
+        state.1b <- pmax(as.numeric(dat.1a[nrow(dat.1a),-1]),0)
+        names(state.1b) <- names(state.1a)
+        state.1b["V.bb"] <- floor(initial.titre*log(2) + 0.5)
+        dat.1b = wv.BTV.coinfection.reassort.variable(times.b,state.1b,parms.1,withlike)
+        dat.1 <- rbind(dat.1a,dat.1b[-1,])
+        V.tot.1 <- rowSums(dat.1[,grepl("V.",names(dat.1))])
+        R.tot.1 <- rowSums(dat.1[,c("V.br","V.mr","V.sr")])
+
+        ## 2. constrained to midgut p.mib(1 - p.db.new)
+        state.2a <- state.1a
+        state.2a["T.m"] <- parms[["T0.m"]]
+        parms.2 <- parms
+        parms.2["T0.s"] <- 0
+        dat.2a <- wv.BTV.coinfection.reassort.variable(times.a,state.2a,parms.2,withlike)
+        state.2b <- pmax(as.numeric(dat.2a[nrow(dat.2a),-1]),0)
+        names(state.2b) <- names(state.2a)
+        state.2b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+        dat.2b <- wv.BTV.coinfection.reassort.variable(times.b,state.2b,parms.2,withlike)
+        dat.2 <- rbind(dat.2a,dat.2b[-1,])
+        V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
+        R.tot.2 <- rowSums(dat.2[,c("V.br","V.mr","V.sr")])
+
+        ## 3. disseminated infection following second bloodmeal p.mib*(p.db.new - p.db) 
+        state.3a <- state.2a
+        parms.3a <- parms
+        parms.3a["T0.s"] <- 0
+        dat.3a <- wv.BTV.coinfection.reassort.variable(times.a,state.3a,parms.3a,withlike)
+        state.3b <- pmax(as.numeric(dat.3a[nrow(dat.3a),-1]),0)
+        names(state.3b) <- names(state.3a)
+        state.3b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+        state.3b["T.s"] <- parms[["T0.s"]]
+        parms.3b <- parms
+        dat.3b <- wv.BTV.coinfection.reassort.variable(times.b,state.3b,parms.3b,withlike)
+        dat.3 <- rbind(dat.3a,dat.3b[-1,])
+        V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
+        R.tot.3 <- rowSums(dat.3[,c("V.br","V.mr","V.sr")])
+
+        ## 4. disseminated infection right away p.mib*p.db 
+        state.4a <- state.3a
+        state.4a["T.s"] <- parms[["T0.s"]]
+        parms.4 <- parms
+        dat.4a <- wv.BTV.coinfection.reassort.variable(times.a,state.4a,parms.4,withlike)
+        state.4b <- pmax(as.numeric(dat.4a[nrow(dat.4a),-1]),0)
+        names(state.4b) <- names(state.4a)
+        state.4b[["V.bb"]] <- floor(initial.titre*log(2) + 0.5)
+        dat.4b <- wv.BTV.coinfection.reassort.variable(times.b,state.4b,parms.4,withlike)
+        dat.4 <- rbind(dat.4a,dat.4b[-1,])
+        V.tot.4 <- rowSums(dat.4[,grepl("V.",names(dat.4))])
+        R.tot.4 <- rowSums(dat.4[,c("V.br","V.mr","V.sr")])
+
+        ## Get weighted sum
+        V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.db.new) +
+            V.tot.3*p.mib*(p.db.new-p.db) + V.tot.4*p.mib*p.db
+        V.tot.pos <- V.tot.2*(1-p.db.new) + V.tot.3*(p.db.new-p.db) + V.tot.4*p.db
+        R.tot <- R.tot.1*(1-p.mib) + R.tot.2*p.mib*(1-p.db.new) +
+            R.tot.3*p.mib*(p.db.new-p.db) + R.tot.4*p.mib*p.db
+        R.tot.pos <- R.tot.2*(1-p.db.new) + R.tot.3*(p.db.new-p.db) + R.tot.4*p.db
+        output.list <- list(V.tot=V.tot,V.tot.pos=V.tot.pos,
+                            R.tot=R.tot,R.tot.pos=R.tot.pos)
+    } else {
+        times <- seq(0,runtime,1)
+        ## 1. no infection
+        state.1 <- state.coinf
+        state.1[["V.ba"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
+        state.1[["V.bb"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
+        state.1["T.m"] <- 0
+        state.1["T.s"] <- 0
+        parms.1 <- parms
+        parms.1["T0.m"] <- 0
+        parms.1["T0.s"] <- 0
+        dat.1 <- wv.BTV.coinfection.reassort.variable(times,state.1,parms.1,withlike)
+        V.tot.1 <- rowSums(dat.1[,grepl("V.",names(dat.1))])
+        R.tot.1 <- rowSums(dat.1[,c("V.br","V.mr","V.sr")])
+
+        ## 2. constrained to midgut p.mib(1 - p.db)
+        state.2 <- state.1
+        state.2["T.m"] <- parms[["T0.m"]]
+        parms.2 <- parms
+        parms.2["T0.s"] <- 0
+        dat.2 <- wv.BTV.coinfection.reassort.variable(times,state.2,parms.2,withlike)
+        V.tot.2 <- rowSums(dat.2[,grepl("V.",names(dat.2))])
+        R.tot.2 <- rowSums(dat.2[,c("V.br","V.mr","V.sr")])
+
+        ## 3. disseminated infection p.mib*p.db
+        state.3 <- state.2
+        state.3["T.s"] <- parms[["T0.s"]]
+        parms.3 <- parms
+        dat.3 <- wv.BTV.coinfection.reassort.variable(times,state.3,parms.3,withlike)
+        V.tot.3 <- rowSums(dat.3[,grepl("V.",names(dat.3))])
+        R.tot.3 <- rowSums(dat.3[,c("V.br","V.mr","V.sr")])
+
+        ## Get weighted sum
+        V.tot <- V.tot.1*(1-p.mib) + V.tot.2*p.mib*(1-p.db) +
+            V.tot.3*p.mib*p.db
+        V.tot.pos <- V.tot.2*(1-p.db) + V.tot.3*p.db
+        R.tot <- R.tot.1*(1-p.mib) + R.tot.2*p.mib*(1-p.db) +
+            R.tot.3*p.mib*p.db
+        R.tot.pos <- R.tot.2*(1-p.db) + R.tot.3*p.db
+        output.list <- list(V.tot=V.tot,V.tot.pos=V.tot.pos,
+                            R.tot=R.tot,R.tot.pos=R.tot.pos)
+    }    
+    return(output.list)
+}
+
+## The within-vector model in Tuncer et al.
+## https://www.tandfonline.com/doi/full/10.1080/17513758.2021.1970261
+tuncer.wv = function(t, state, parameters) 
 {
     wv.odes <- function(t,state,parameters) {
         with(as.list(c(state, parameters)),{
