@@ -14,12 +14,14 @@ p_load(data.table,
        mixtools,
        adaptivetau,
        mgcv,
-       RColorBrewer#,psych,bbmle
+       RColorBrewer,
+       imager,
+       sensobol#,psych,bbmle
        )
 
 ## Plot controls
 check.neutrality <- FALSE # check for eco. and pop gen neutrality (Lipsitch et al)
-check.works <- TRUE  # check coinfection behaves the same way as the single model
+check.works <- FALSE  # check coinfection behaves the same way as the single model
 plot.timeseries <- TRUE # plot coinfection timeseries
 plot.reassortment <- TRUE # plot reassortment proportion by gap
 regenerate.parmsweep <- FALSE
@@ -58,12 +60,6 @@ logistic.optim.fn <- function(par) {
     return(sum((prop.positive[data.hours] - fu$Detection.rate[model.hours])^2))
 }
 logistic.optim.out <- optim(c(0.4,1,0),logistic.optim.fn)
-## logistic.optim.out
-## plot(times,prop.positive.fn(times,logistic.optim.out$par[1],
-##                             logistic.optim.out$par[2],
-##                             logistic.optim.out$par[3]),type='l',
-##      ylim=c(0,1),ylab="Proportion positive")
-## points(fu$Time.pi..hours.,fu$Detection.rate)
 prop.positive.vec <- prop.positive.fn(times,logistic.optim.out$par[1],
                                       logistic.optim.out$par[2],
                                       logistic.optim.out$par[3])
@@ -167,29 +163,41 @@ if (check.neutrality) {
 
 ## Check coinfection model works similarly for single infection
 wl <- 1
+cols <- rev(viridis(4))
 if (check.works) {
+    pdf("../figures/model_equivalence.pdf")
     single.out <- wv.BTV.barrier.det(times,state,parms)
+    V.out.single <- rowSums(single.out[,grepl("V.",names(single.out))])
     coinfection.out <- wv.BTV.coinfection.reassort(times,state.coinf,parms,withlike=wl)
-    plot(times,rowSums(coinfection.out[,grepl("V.",names(coinfection.out))]),
-         type='l',log='y',lwd=2,ylim=c(1e2,1e5))
-    lines(times,rowSums(single.out[,grepl("V.",names(single.out))]),
-          lty=2,col='red',lwd=3)
     V.out.a <- rowSums(coinfection.out[,grepl("V.",names(coinfection.out))])
+    plot(times,V.out.a,
+         type='l',log='y',lwd=9,col=cols[1],
+         las=1,xlab="Time since infection (hours)",
+         ylab=expression("Viral titre ("~TCID[50]~")"),
+         bty="n")
+    lines(times,rowSums(single.out[,grepl("V.",names(single.out))]),
+          lty=1,col=cols[2],lwd=3)
+    print(paste("A vs single",
+                sum(abs(V.out.a - V.out.single))))
     state.coinf[["V.ba"]] <- 0; state.coinf[["V.bb"]] <- floor(initial.titre*log(2) + 0.5);
-    coinfection.out.b <- wv.BTV.coinfection.reassort(times,state.coinf,parms,withlike=wl)
+    coinfection.out <- wv.BTV.coinfection.reassort(times,state.coinf,parms,withlike=wl)
+    V.out.b <- rowSums(coinfection.out[,grepl("V.",names(coinfection.out))])
     print(paste("A vs B",
-                sum(abs(V.out.a - rowSums(coinfection.out.b[,grepl("V.",names(coinfection.out))])))))
-    lines(times,rowSums(coinfection.out.b[,grepl("V.",names(coinfection.out))]),
-          col='green',lwd=3,lty=3)
+                sum(abs(V.out.a - V.out.b))))
+    lines(times,V.out.b,
+          col=cols[3],lwd=3,lty=2)
     state.coinf[["V.ba"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
     state.coinf[["V.bb"]] <- 0.5 * floor(initial.titre*log(2) + 0.5)
-    coinfection.out.mixture <- wv.BTV.coinfection.reassort(times,state.coinf,parms,withlike=wl)
-    lines(times,rowSums(coinfection.out[,grepl("V.",names(coinfection.out))]),
-          col='orange',lwd=5,lty=1)
+    coinfection.out <- wv.BTV.coinfection.reassort(times,state.coinf,parms,withlike=wl)
+    V.out.mix <- rowSums(coinfection.out[,grepl("V.",names(coinfection.out))])
+    lines(times,V.out.mix,
+          col=cols[4],lwd=3,lty=3)
     print(paste("A vs mixture",
-                sum(abs(V.out.a - rowSums(coinfection.out.mixture[,grepl("V.",names(coinfection.out))])))))
-    print(paste("A vs single",
-                sum(abs(V.out.a - rowSums(single.out[,grepl("V.",names(single.out))])))))
+                sum(abs(V.out.a - V.out.mix))))
+    legend("right",bty="n",legend=c("Single infection model","Coinfection model, just A",
+                                    "Coinfection model, just B", "Coinfection model, equal mix"),
+           col=cols,lty=c(1,1:3),lwd=c(9,rep(3,3)))
+    dev.off()
 }
 
 ## Samal data
@@ -324,7 +332,7 @@ if (plot.reassortment) {
         gam.pred <- predict(g.log,newdata=data.frame(time=tt,gap=seq(0,tt,1/24)),se.fit=TRUE,type='link')
         if (ii == 1) {
             plot(seq(0,tt,1/24),plogis(gam.pred$fit),type='l',
-                 xlim=c(0,10),ylim=c(0,0.8),
+                 xlim=c(0,10),ylim=c(0,1),
                  lwd=2,xlab="Second infection day",ylab="Proportion reassortant",
                  col=cols[ii],lty=2,bty="n",las=1,yaxs="i")
         } else {
@@ -411,7 +419,7 @@ if (plot.parmsweep) {
     filled.contour(log(epsilon.ms,10),log(p.folds,10),
                    log(apply(target.ratio,c(1,2),function(x)max(x,0)),10),
                    plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
-                                      ylab="Fold change in p"),
+                                      ylab="Fold difference in viral production rates"),
                    axes=FALSE,
                    plot.axes={axis(1,at=pretty(range(log(epsilon.ms,10)),6),
                                    labels=round(10^pretty(range(log(epsilon.ms,10)),6),2));
@@ -421,12 +429,13 @@ if (plot.parmsweep) {
                                    abline(v=log(parms["epsilon.m"],10),lwd=2,lty=3)},
                    key.axes=axis(4,at=pretty(log(apply(target.ratio,c(1,2),function(x)max(x,0)),10)),
                                  labels=round(10^pretty(log(apply(target.ratio,c(1,2),
-                                                                  function(x)max(x,0)),10)),2)),
+                                                                  function(x)max(x,0)),10)),5)),
                    col=cols.diverging,
                    levels=lvls)
     dev.off()
 
-    pdf("../figures/sweep_slices_reassortment.pdf")
+    tiff("../figures/sweep_slices_reassortment.tif",res=600,compression="lzw",
+         width=600*20/3,height=600*20/3)
     par(mfrow=c(2,1))
     plot(epsilon.ms,target.ratio[,which(p.folds==1)],bty="n",xlab="Eclipse phase of midgut cells (hours)",
          type='l',lwd=3,
@@ -434,7 +443,7 @@ if (plot.parmsweep) {
     abline(h=1,lty=2)
     abline(v=parms["epsilon.m"],lty=3)
     plot(p.folds,
-         target.ratio[which(round(epsilon.ms,3)==round(parms["epsilon.m"],3)),],
+         target.ratio[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
          bty="n",xlab="Fold difference in viral production rates",
          type='l',lwd=3,
          ylab="Ratio of day 0 to day 3",las=1,log="xy")
@@ -442,11 +451,23 @@ if (plot.parmsweep) {
     abline(v=1,lty=3)
     dev.off()
 
+    pdf("../figures/combined_sweep_ratio.pdf",width=7,height=3.5)
+    par(mfrow=c(1,2))
+    par(mar = c(0,0,1.3,0))
+    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_ratio.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
+    ##par(mar = c(0,0.1,1.3,0.1))
+    im <- load.image("../figures/sweep_slices_reassortment.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'B', font = 2)
+    dev.off()
+
     tiff("../figures/sweep_epsilon_pfold_reassortment_0day.tif",res=600,compression="lzw",
          width=600*20/3,height=600*20/3)
     filled.contour(log(epsilon.ms,10),log(p.folds,10),target.0day,
                    plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
-                                      ylab="Fold change in p"),
+                                      ylab="Fold difference in viral production rates"),
                    axes=FALSE,
                    plot.axes={axis(1,at=pretty(range(log(epsilon.ms,10)),6),
                                    labels=round(10^pretty(range(log(epsilon.ms,10)),6),2));
@@ -459,7 +480,8 @@ if (plot.parmsweep) {
 
     dev.off()
 
-    pdf("../figures/sweep_slices_0day.pdf")
+    tiff("../figures/sweep_slices_0day.tif",res=600,compression="lzw",
+         width=600*20/3,height=600*20/3)
     par(mfrow=c(2,1))
     plot(epsilon.ms,target.0day[,which(p.folds==1)],bty="n",
          xlab="Eclipse phase of midgut cells (hours)",
@@ -468,7 +490,7 @@ if (plot.parmsweep) {
     abline(h=1,lty=2)
     abline(v=parms["epsilon.m"],lty=3)
     plot(p.folds,
-         target.0day[which(round(epsilon.ms,3)==round(parms["epsilon.m"],3)),],
+         target.0day[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
          bty="n",xlab="Fold difference in viral production rates",
          type='l',lwd=3,
          ylab="Proportion reassortant",las=1,log="x")
@@ -476,11 +498,23 @@ if (plot.parmsweep) {
     abline(v=1,lty=3)
     dev.off()
 
+    pdf("../figures/combined_sweep_0day.pdf",width=7,height=3.5)
+    par(mfrow=c(1,2))
+    par(mar = c(0,0,1.3,0))
+    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_0day.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
+    ##par(mar = c(0,0.1,1.3,0.1))
+    im <- load.image("../figures/sweep_slices_0day.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'B', font = 2)
+    dev.off()
+
     tiff("../figures/sweep_epsilon_pfold_reassortment_3day.tif",res=600,compression="lzw",
          width=600*20/3,height=600*20/3)
     filled.contour(log(epsilon.ms,10),log(p.folds,10),target.3day,
                    plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
-                                      ylab="Fold change in p"),
+                                      ylab="Fold difference in viral production rates"),
                    axes=FALSE,
                    plot.axes={axis(1,at=pretty(range(log(epsilon.ms,10)),6),
                                    labels=round(10^pretty(range(log(epsilon.ms,10)),6),2));
@@ -490,10 +524,10 @@ if (plot.parmsweep) {
                                    abline(v=log(parms["epsilon.m"],10),lwd=2,lty=3)},
                    key.axes=axis(4,at=pretty(target.3day)),
                    color=colorRampPalette(brewer.pal(9,"Reds")))
-
     dev.off()
 
-    pdf("../figures/sweep_slices_3day.pdf")
+    tiff("../figures/sweep_slices_3day.tif",res=600,compression="lzw",
+         width=600*20/3,height=600*20/3)
     par(mfrow=c(2,1))
     plot(epsilon.ms,target.3day[,which(p.folds==1)],bty="n",
          xlab="Eclipse phase of midgut cells (hours)",
@@ -502,12 +536,67 @@ if (plot.parmsweep) {
     abline(h=1,lty=2)
     abline(v=parms["epsilon.m"],lty=3)
     plot(p.folds,
-         target.3day[which(round(epsilon.ms,3)==round(parms["epsilon.m"],3)),],
+         target.3day[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
          bty="n",xlab="Fold difference in viral production rates",
          type='l',lwd=3,
          ylab="Proportion reassortant",las=1,log="x")
     abline(h=1,lty=2)
     abline(v=1,lty=3)
     dev.off()
-    
+
+    pdf("../figures/combined_sweep_3day.pdf",width=7,height=3.5)
+    par(mfrow=c(1,2))
+    par(mar = c(0,0,1.3,0))
+    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_3day.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
+    ##par(mar = c(0,0.1,1.3,0.1))
+    im <- load.image("../figures/sweep_slices_3day.tif")
+    plot(im,axes=FALSE)
+    mtext(side = 3, line = 0, adj = 0.04, 'B', font = 2)
+    dev.off()
+
 }
+
+## Sobol analysis
+load("./sobol_sweep_combined_output.RData")
+indices.0day <- sobol_indices(Y=output.combined[,16],N=1e6,params=colnames(output.combined)[1:15])
+indices.3day <- sobol_indices(Y=output.combined[,17],N=1e6,params=colnames(output.combined)[1:15])
+indices.ratio <- sobol_indices(Y=output.combined[,18],N=1e6,params=colnames(output.combined)[1:15])
+
+pdf("../figures/sobol_pies.pdf",width=10,height=4,pointsize=14)
+layout(t(c(1,1,2,2,3,3)))
+par(mar=c(0,0,3,0))
+pie(c(pmax(0,unlist(indices.0day$results[1:15,1])),1-pmax(0,sum(unlist(indices.0day$results[1:15,1])))),
+    labels=c(rep("",4),expression(mu[m]),rep("",6),expression(mu[s]),"",expression(omega),"","Interactions"),
+    col=viridis(16),
+    main="Simultaneous co-infection")
+plot(-1,-1,bty="n",ylim=c(0,1),xlim=c(0,1),xaxt="n",yaxt="n",xlab="",ylab="")
+legend("center",legend=c(expression(beta[m] * T[m]),expression(d[m]),expression(p[m]),expression(T["0,m"]),expression(mu[m]),
+                         expression(epsilon[m]),expression(c[s]),expression(beta[s]),expression(d[s]),expression(p[s]),
+                         expression(T["0,s"]),
+                         expression(mu[s]),expression(epsilon[s]),expression(omega),expression(P[db]^(inc)),
+                         "Interactions"),
+       fill=viridis(16),bty="n",ncol=2)
+pie(c(pmax(0,unlist(indices.3day$results[1:15,1])),1-pmax(0,sum(unlist(indices.3day$results[1:15,1])))),
+    labels=c(rep("",4),expression(mu[m]),"",expression(c[s]),rep("",4),expression(mu[s]),"",expression(omega),"","Interactions"),
+    col=viridis(16),main="Second infection on day 3")
+dev.off()
+
+pdf("../figures/sobol_pies_higher.pdf",width=10,height=4,pointsize=14)
+layout(t(c(1,1,2,2,3,3)))
+par(mar=c(0,0,3,0))
+pie(pmax(0,unlist(indices.0day$results[16:30,1])),
+    labels=c(rep("",4),expression(mu[m]),rep("",6),expression(mu[s]),"",expression(omega),""),
+    col=viridis(16)[1:15],
+    main="Simultaneous co-infection")
+plot(-1,-1,bty="n",ylim=c(0,1),xlim=c(0,1),xaxt="n",yaxt="n",xlab="",ylab="")
+legend("center",legend=c(expression(beta[m] * T[m]),expression(d[m]),expression(p[m]),expression(T["0,m"]),expression(mu[m]),
+                         expression(epsilon[m]),expression(c[s]),expression(beta[s]),expression(d[s]),expression(p[s]),
+                         expression(T["0,s"]),
+                         expression(mu[s]),expression(epsilon[s]),expression(omega),expression(P[db]^(inc))),
+       fill=viridis(16)[1:15],bty="n",ncol=2)
+pie(pmax(0,unlist(indices.3day$results[16:30,1])),
+    labels=c(rep("",4),expression(mu[m]),"",expression(c[s]),rep("",4),expression(mu[s]),"",expression(omega),""),
+    col=viridis(16)[1:15],main="Second infection on day 3")
+dev.off()

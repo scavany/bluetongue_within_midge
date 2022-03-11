@@ -71,6 +71,7 @@ plot(g.log,trans=plogis,shift=coef(g.log)[1],
      seWithMean=TRUE,shade=TRUE,rug=FALSE,select=1,
      xlab="Time of measurement (days)",
      ylab="Proportion reassortant",bty="n",las=1)
+mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
 for (t in unique(combined.binary$time)) {
     points(t,sum(combined.binary[time==t]$reassortant) /
                 length(combined.binary[time==t]$reassortant))
@@ -79,6 +80,29 @@ plot(g.log,trans=plogis,shift=coef(g.log)[1],
      seWithMean=TRUE,shade=TRUE,rug=FALSE,select=2,
      xlab="Gap between infections (days)",
      ylab="",bty="n",las=1)
+mtext(side = 3, line = 0, adj = 0.04, 'B', font = 2)
+for (t in unique(combined.binary$gap)) {
+    points(t,sum(combined.binary[gap==t]$reassortant) /
+                length(combined.binary[gap==t]$reassortant))
+}
+dev.off()
+
+pdf("../figures/gam_output_interview.pdf",width=6,height=2.5)
+par(mfrow=c(1,2),mar=c(4.1,4.1,0.1,0.1))
+plot(g.log,trans=plogis,shift=coef(g.log)[1],
+     seWithMean=TRUE,shade=TRUE,rug=FALSE,select=1,
+     xlab="Time of measurement (days)",
+     ylab="Proportion reassortant",bty="n",las=1)
+mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
+for (t in unique(combined.binary$time)) {
+    points(t,sum(combined.binary[time==t]$reassortant) /
+                length(combined.binary[time==t]$reassortant))
+}
+plot(g.log,trans=plogis,shift=coef(g.log)[1],
+     seWithMean=TRUE,shade=TRUE,rug=FALSE,select=2,
+     xlab="Gap between infections (days)",
+     ylab="",bty="n",las=1)
+mtext(side = 3, line = 0, adj = 0.04, 'B', font = 2)
 for (t in unique(combined.binary$gap)) {
     points(t,sum(combined.binary[gap==t]$reassortant) /
                 length(combined.binary[gap==t]$reassortant))
