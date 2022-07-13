@@ -82,6 +82,7 @@ load(file="./coinfection_mcmc_out_joint_fitting_10000.RData",verbose=T) # fit to
 
 sample.out <- as.data.frame(getSample(mcmc.out,start=mcmc.out$settings$iterations / 9))
 MAP.out <- MAP(mcmc.out,start=mcmc.out$settings$iterations / 9)$parametersMAP
+CI.out <- apply(sample.out,2,function(x)quantile(x,c(0.025,0.975)))
 
 ## Now get new parameters and plot
 parms <- MAP.out
@@ -414,7 +415,7 @@ if (regenerate.parmsweep) {
 if (plot.parmsweep) {
     load("sweep_epsilon_pfold_reassortment.RData")
 
-    resolution <- 600
+    resolution <- 1200
     
     tiff("../figures/sweep_epsilon_pfold_reassortment_ratio.tif",res=resolution,compression="lzw",
          width=resolution*5.1,height=resolution*3.7)
@@ -623,9 +624,9 @@ if (plot.parmsweep) {
 ## Sobol analysis
 if (plot.sobol){
     load("./sobol_sweep_combined_output.RData",verbose=TRUE)
-    indices.0day <- sobol_indices(Y=output.combined[,16],N=1e6,params=colnames(output.combined)[1:15])
-    indices.3day <- sobol_indices(Y=output.combined[,17],N=1e6,params=colnames(output.combined)[1:15])
-    indices.ratio <- sobol_indices(Y=output.combined[,18],N=1e6,params=colnames(output.combined)[1:15])
+    indices.0day <- sobol_indices(Y=output.combined[,16],N=1e5,params=colnames(output.combined)[1:15])
+    indices.3day <- sobol_indices(Y=output.combined[,17],N=1e5,params=colnames(output.combined)[1:15])
+    indices.ratio <- sobol_indices(Y=output.combined[,18],N=1e5,params=colnames(output.combined)[1:15])
 
     pdf("../figures/sobol_pies.pdf",width=10,height=4,pointsize=14)
     layout(t(c(1,1,2,2,3,3)))
@@ -674,8 +675,8 @@ if (plot.sobol){
         col=viridis(16)[1:15],main="Second infection on day 3")
     dev.off()
 
-    second.indices.0day <- sobol_indices(Y=output.combined[,16],N=1e6,
+    second.indices.0day <- sobol_indices(Y=output.combined[,16],N=1e5,
                                          params=colnames(output.combined)[1:15],order="second")
-    second.indices.3day <- sobol_indices(Y=output.combined[,17],N=1e6,
+    second.indices.3day <- sobol_indices(Y=output.combined[,17],N=1e5,
                                          params=colnames(output.combined)[1:15],order="second")
 }

@@ -56,7 +56,7 @@ plot(times/24,prop.positive.fn(times,logistic.optim.out$par[1],
                                logistic.optim.out$par[2],
                                logistic.optim.out$par[3]),type='l',
      ylim=c(0,1.05),xlim=c(0,15),
-     ylab="Proportion positive",xlab="Days post-infection",las=1,xaxs="i",yaxs="i",
+     ylab="Proportion BTV positive",xlab="Days post-infection",las=1,xaxs="i",yaxs="i",
      bty="n",lwd=3)
 points(fu$Time.pi..hours./24,fu$Detection.rate)
 legend("topright",pch=c(1,NA),lty=c(NA,1),legend=c("Data from Fu et al.","Fitted estimate"),
@@ -123,7 +123,7 @@ par(mar=c(4.1,4.1,2,0.1))
 filled.contour(log(n.virions,10),log(beta.T.m,10),zmat,
                plot.title = title(#"Probability that at least one midgut cell is infected",
                                   xlab="Initial number of virions",
-                                  ylab=expression(paste(beta,T[m]))),
+                                  ylab=expression(paste(beta,T[m]," (infected cells / hr / virion)"))),
                axes=FALSE,
                plot.axes={axis(1,at=pretty(range(log(n.virions,10)),6),
                                labels=round(10^pretty(range(log(n.virions,10)),6),2));
@@ -160,7 +160,7 @@ par(mar=c(4.1,4.1,2,0.1))
 filled.contour(p.mib.vec,log(beta.T.m,10),zmat,
                plot.title = title(#"Probability that at least one midgut cell is infected",
                                   xlab="Probability not an MIB",
-                                  ylab=expression(paste(beta,T[m]))),
+                                  ylab=expression(paste(beta,T[m]," (infected cells / hr / virion)"))),
                axes=FALSE,
                plot.axes={axis(1,at=pretty(range(p.mib.vec),6),
                                labels=round(pretty(range(p.mib.vec),6),2));
