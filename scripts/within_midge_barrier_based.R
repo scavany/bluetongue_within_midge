@@ -14,8 +14,7 @@ p_load(data.table,
        mixtools,
        adaptivetau,
        RColorBrewer,
-       imager#,psych,bbmle
-       )
+       imager)
 
 ## load within-vector model of BTV infection
 source("./within_midge_barrier_based_fn.R")
@@ -121,6 +120,7 @@ tiff("../figures/midgut_infection_prob_fixed_barrier.tif",
      width=1200,height=900,res=300,compression="lzw",pointsize=10)
 par(mar=c(4.1,4.1,2,0.1))
 filled.contour(log(n.virions,10),log(beta.T.m,10),zmat,
+               zlim=c(0,1),
                plot.title = title(#"Probability that at least one midgut cell is infected",
                                   xlab="Initial number of virions",
                                   ylab=expression(paste(beta,T[m]," (infected cells / hr / virion)"))),
@@ -141,7 +141,7 @@ filled.contour(log(n.virions,10),log(beta.T.m,10),zmat,
                                lines(c(0.95,1.05)*log(initial.titre*log(2),10),
                                      log(rep(q.05[2],2),10),lty=3);
                },
-               key.axes=axis(4,at=pretty(zmat)),
+               key.axes=axis(4,at=pretty(c(zmat,1))),
                key.title={par(cex.main=0.9);title("Pr(midgut\ninfection)")},
                color=colorRampPalette(brewer.pal(9,"Reds")))
 dev.off()
@@ -232,21 +232,25 @@ V.tot.it <- calc.V.it(state,parms,times)$V.tot.it
 
 
 pdf("../figures/viral_dynamics_det.pdf")
+cols <- plasma(6)[c(1,4)]
 par(mfrow=c(2,1),mar=c(5.1,4.1,1.1,2.1))
-plot(times, V.adj / log(2),type='l', lwd=3, las=1,xaxs="i",yaxs="i",log="y",bty="n",col="green",
+plot(times, V.adj / log(2),type='l', lwd=3, las=1,xaxs="i",yaxs="i",log="y",bty="n",col=cols[1],
      xlab="", ylab=expression(Viral~load~(TCID[50])),
      ylim=c(min(c(V.adj / log(2),titre.data,0.8*10^0.75)),max(c(V.out$V.tot.3 / log(2),titre.data))))
-lines(times,V.out$V.tot.1 / log(2),col="red",lwd=2)
-lines(times,V.out$V.tot.2 / log(2),col="gray",lwd=2)
-lines(times,V.out$V.tot.3 / log(2),col="black",lwd=2)
-legend("bottomright",legend=c("Positive midges","Midgut infection barrier","No MIB", "No barriers"),lwd=c(3,2,2,2),
-       col=c("green","red","gray","black"),bty="n")
+lines(times,V.out$V.tot.1 / log(2),col=cols[2],lwd=2,lty=2)
+lines(times,V.out$V.tot.2 / log(2),col="gray",lwd=2,lty=2)
+lines(times,V.out$V.tot.3 / log(2),col="black",lwd=2,lty=2)
+legend("bottomright",
+       legend=c("All positive midges (model)","Midges with an MIB (model)","Midges without an MIB (model)",
+                "Midges with no barriers (model)","Average of positive midges (data)"),
+       lwd=c(3,2,2,2,1),pch=c(rep(NA,4),1),
+       lty=c(1,2,2,2,NA),col=c(cols,"gray","black","black"),bty="n")
 points(times[data.hours],titre.data)
 abline(h=10^3, lty=2)
 abline(h=10^0.75, lty=3)
 mtext(side = 3,'A',adj=0)
-plot(times, V.tot.it / log(2),type='l', lwd=2, las=1,xaxs="i",yaxs="i",log="y",bty="n",
-     xlab="Time (hours)", ylab=expression(Viral~load~(TCID[50])),
+plot(times, V.tot.it / log(2),type='l', lwd=3, las=1,xaxs="i",yaxs="i",log="y",bty="n",
+     xlab="Time (hours)", ylab=expression(Viral~load~(TCID[50])),col=cols[1],
      ylim=c(min(c(V.tot.it / log(2),titre.data.it)),max(c(V.tot.it / log(2),titre.data.it))))
 points(times[data.hours.it],titre.data.it)
 mtext(side = 3,'B',adj=0)

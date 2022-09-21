@@ -411,20 +411,20 @@ if (regenerate.parmsweep) {
     save(epsilon.ms,epsilon.ss,p.folds,
          target.0day,target.3day,target.ratio,file="sweep_epsilon_pfold_reassortment.RData")
 }
-
+ 
 if (plot.parmsweep) {
-    load("sweep_epsilon_pfold_reassortment.RData")
+    load("sweep_epsilon_betafold_reassortment.RData")
 
     resolution <- 1200
     
-    tiff("../figures/sweep_epsilon_pfold_reassortment_ratio.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_epsilon_betafold_reassortment_ratio.tif",res=resolution,compression="lzw",
          width=resolution*5.1,height=resolution*3.7)
     par(mai=c(0.22,0.62,0.42,0.42))
     nlvls <- 21
     ma <- max(abs(range(log(target.ratio,10),na.rm=TRUE)))
     lvls <- seq(-ma,ma,length.out=nlvls)
     cols.diverging <- rev(colorRampPalette(brewer.pal(9,"RdBu"))(nlvls-1))
-    filled.contour(log(epsilon.ms,10),log(p.folds,10),
+    filled.contour(log(epsilon.ms,10),log(beta.folds,10),
                    log(apply(target.ratio,c(1,2),function(x)max(x,0)),10),
                    ## plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
                    ##                    ylab="Fold difference in viral production rates"),
@@ -448,7 +448,7 @@ if (plot.parmsweep) {
          width=resolution*3.9,height=resolution*1.9)
     par(mar=c(4.1,3.1,2.1,0.4))
     ## par(mfrow=c(2,1))
-    plot(epsilon.ms,target.ratio[,which(p.folds==1)],bty="n",
+    plot(epsilon.ms,target.ratio[,which(beta.folds==1)],bty="n",
          xlab="Eclipse phase of midgut cells (hours)",
          type='l',lwd=3,
          ylab="",las=1,log="xy",xaxs="i",xaxt="n")
@@ -458,12 +458,12 @@ if (plot.parmsweep) {
     ## mtext(side = 3, line = 1, adj = -0.14, 'B', font = 2)
     dev.off()
 
-    tiff("../figures/sweep_slices_reassortment_production.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_slices_reassortment_beta.tif",res=resolution,compression="lzw",
          width=resolution*1.9,height=resolution*4)
     par(mar=c(2.2,4.1,1.75,1.1))
     plot(target.ratio[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
-         p.folds,
-         bty="n",ylab="Fold difference in viral production rates",
+         beta.folds,
+         bty="n",ylab=expression(paste("Fold difference in ",beta)),
          type='l',lwd=3,
          xlab="",las=1,log="xy",yaxs="i")
     abline(v=1,lty=4,lwd=2)
@@ -471,18 +471,18 @@ if (plot.parmsweep) {
     mtext(side = 3, line = 0.8, adj = -0.6, 'C', font = 2)
     dev.off()
 
-    pdf("../figures/combined_sweep_ratio.pdf",width=7,height=5.5)
+    pdf("../figures/combined_sweep_ratio_beta.pdf",width=7,height=5.5)
     layout(matrix(c(rep(rev(c(rep(1,52),rep(3,18))),37),
                     rep(c(rep(3,18),rep(2,39),rep(5,13)),3),
                     rep(c(rep(4,18),rep(2,39),rep(5,13)),15)),
                   byrow=TRUE,ncol=70))
     par(mar = c(0,0,0,0))
-    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_ratio.tif")
+    im <- load.image("../figures/sweep_epsilon_betafold_reassortment_ratio.tif")
     plot(im,axes=FALSE)
     ##par(mar = c(0,0.1,1.3,0.1))
     im <- load.image("../figures/sweep_slices_reassortment_eclipse.tif")
     plot(im,axes=FALSE)
-    im <- load.image("../figures/sweep_slices_reassortment_production.tif")
+    im <- load.image("../figures/sweep_slices_reassortment_beta.tif")
     plot(im,axes=FALSE)
     plot(NULL,xlim=c(0,1),ylim=c(0,1),xlab="",ylab="",bty="n",xaxt="n",yaxt="n")
     text(0.2,0.6,
@@ -490,10 +490,10 @@ if (plot.parmsweep) {
          cex=4/3,adj=0)
     dev.off()
 
-    tiff("../figures/sweep_epsilon_pfold_reassortment_0day.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_epsilon_betafold_reassortment_0day.tif",res=resolution,compression="lzw",
          width=resolution*5.1,height=resolution*3.7)
     par(mai=c(0.22,0.62,0.42,0.42))
-    filled.contour(log(epsilon.ms,10),log(p.folds,10),target.0day,
+    filled.contour(log(epsilon.ms,10),log(beta.folds,10),target.0day,
                    ## plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
                    ##                    ylab="Fold difference in viral production rates"),
                    axes=FALSE,
@@ -513,7 +513,7 @@ if (plot.parmsweep) {
          width=resolution*3.9,height=resolution*1.9)
     par(mar=c(4.1,3.1,2.1,0.4))
     ## par(mfrow=c(2,1))
-    plot(epsilon.ms,target.0day[,which(p.folds==1)],bty="n",
+    plot(epsilon.ms,target.0day[,which(beta.folds==1)],bty="n",
          xlab="Eclipse phase of midgut cells (hours)",
          type='l',lwd=3,
          ylab="",las=1,log="x",xaxs="i",xaxt="n")
@@ -522,12 +522,12 @@ if (plot.parmsweep) {
     ## mtext(side = 3, line = 1, adj = -0.14, 'B', font = 2)
     dev.off()
 
-    tiff("../figures/sweep_slices_0day_production.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_slices_0day_beta.tif",res=resolution,compression="lzw",
          width=resolution*1.9,height=resolution*4)
     par(mar=c(2.2,4.1,1.75,1.1))
     plot(target.0day[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
-         p.folds,
-         bty="n",ylab="Fold difference in viral production rates",
+         beta.folds,
+         bty="n",ylab=expression(paste("Fold difference in ",beta)),
          type='l',lwd=3,
          xlab="",las=1,log="xy",yaxs="i",xaxt="n")
     abline(h=1,lty=2,lwd=2)
@@ -535,19 +535,19 @@ if (plot.parmsweep) {
     ## mtext(side = 3, line = 0.8, adj = -0.6, 'C', font = 2)
     dev.off()
     
-    pdf("../figures/combined_sweep_0day.pdf",width=7,height=5.5)
+    pdf("../figures/combined_sweep_0day_beta.pdf",width=7,height=5.5)
     layout(matrix(c(rep(rev(c(rep(1,52),rep(3,18))),37),
                     rep(c(rep(3,18),rep(2,39),rep(5,13)),3),
                     rep(c(rep(4,18),rep(2,39),rep(5,13)),15)),
                   byrow=TRUE,ncol=70))
     par(mar = c(0,0,0,0))
-    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_0day.tif")
+    im <- load.image("../figures/sweep_epsilon_betafold_reassortment_0day.tif")
     plot(im,axes=FALSE)
     ## mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
     ##par(mar = c(0,0.1,1.3,0.1))
     im <- load.image("../figures/sweep_slices_0day_eclipse.tif")
     plot(im,axes=FALSE)
-    im <- load.image("../figures/sweep_slices_0day_production.tif")
+    im <- load.image("../figures/sweep_slices_0day_beta.tif")
     plot(im,axes=FALSE)
     plot(NULL,xlim=c(0,1),ylim=c(0,1),xlab="",ylab="",bty="n",xaxt="n",yaxt="n")
     text(0.2,0.6,
@@ -555,10 +555,10 @@ if (plot.parmsweep) {
          cex=4/3,adj=0)
     dev.off()
 
-    tiff("../figures/sweep_epsilon_pfold_reassortment_3day.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_epsilon_betafold_reassortment_3day.tif",res=resolution,compression="lzw",
          width=resolution*5.1,height=resolution*3.7)
     par(mai=c(0.22,0.62,0.42,0.42))
-    filled.contour(log(epsilon.ms,10),log(p.folds,10),target.3day,
+    filled.contour(log(epsilon.ms,10),log(beta.folds,10),target.3day,
                    ## plot.title = title(xlab="Eclipse phase of midgut cells (hours)",
                    ##                    ylab="Fold difference in viral production rates"),
                    axes=FALSE,
@@ -578,7 +578,7 @@ if (plot.parmsweep) {
          width=resolution*3.9,height=resolution*1.9)
     par(mar=c(4.1,3.1,2.1,0.4))
     ## par(mfrow=c(2,1))
-    plot(epsilon.ms,target.3day[,which(p.folds==1)],bty="n",
+    plot(epsilon.ms,target.3day[,which(beta.folds==1)],bty="n",
          xlab="Eclipse phase of midgut cells (hours)",
          type='l',lwd=3,
          ylab="",las=1,log="x",xaxs="i",xaxt="n")
@@ -587,31 +587,31 @@ if (plot.parmsweep) {
     ## mtext(side = 3, line = 1, adj = -0.14, 'B', font = 2)
     dev.off()
 
-    tiff("../figures/sweep_slices_3day_production.tif",res=resolution,compression="lzw",
+    tiff("../figures/sweep_slices_3day_beta.tif",res=resolution,compression="lzw",
          width=resolution*1.9,height=resolution*4)
     par(mar=c(2.2,4.1,1.75,1.1))
     plot(target.3day[which.min(abs(epsilon.ms - parms["epsilon.m"])),],
-         p.folds,
-         bty="n",ylab="Fold difference in viral production rates",
+         beta.folds,
+         bty="n",ylab=expression(paste("Fold difference in ",beta)),
          type='l',lwd=3,
          xlab="",las=1,log="xy",yaxs="i")
     abline(h=1,lty=2,lwd=2)
     ##mtext(side = 3, line = 0.8, adj = -0.6, 'C', font = 2)
     dev.off()
     
-    pdf("../figures/combined_sweep_3day.pdf",width=7,height=5.5)
+    pdf("../figures/combined_sweep_3day_beta.pdf",width=7,height=5.5)
     layout(matrix(c(rep(rev(c(rep(1,52),rep(3,18))),37),
                     rep(c(rep(3,18),rep(2,39),rep(5,13)),3),
                     rep(c(rep(4,18),rep(2,39),rep(5,13)),15)),
                   byrow=TRUE,ncol=70))
     par(mar = c(0,0,0,0))
-    im <- load.image("../figures/sweep_epsilon_pfold_reassortment_3day.tif")
+    im <- load.image("../figures/sweep_epsilon_betafold_reassortment_3day.tif")
     plot(im,axes=FALSE)
     ## mtext(side = 3, line = 0, adj = 0.04, 'A', font = 2)
     ##par(mar = c(0,0.1,1.3,0.1))
     im <- load.image("../figures/sweep_slices_3day_eclipse.tif")
     plot(im,axes=FALSE)
-    im <- load.image("../figures/sweep_slices_3day_production.tif")
+    im <- load.image("../figures/sweep_slices_3day_beta.tif")
     plot(im,axes=FALSE)
     plot(NULL,xlim=c(0,1),ylim=c(0,1),xlab="",ylab="",bty="n",xaxt="n",yaxt="n")
     text(0.2,0.6,
